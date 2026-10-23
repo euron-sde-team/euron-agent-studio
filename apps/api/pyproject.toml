@@ -43,7 +43,7 @@ dev = [
   "hypothesis>=6.170",
   "ruff>=0.17",
   "mypy>=2.4",
-  "boto3-stubs[s3,sqs]>=1.43",
+  "boto3-stubs[s3,sqs,secretsmanager]>=1.43",
   "types-jmespath>=1.0",
 ]
 

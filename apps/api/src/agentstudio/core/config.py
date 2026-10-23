@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     # Postgres
     database_url: str = "postgresql+asyncpg://agentstudio:agentstudio@localhost:5452/agentstudio"
+    # AWS: the RDS-managed secret holding the password; read per new connection.
+    database_secret_arn: str | None = None
     database_pool_size: int = Field(default=10, ge=1, le=100)
     database_max_overflow: int = Field(default=10, ge=0, le=100)
     database_echo: bool = False

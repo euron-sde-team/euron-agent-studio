@@ -10,13 +10,12 @@ from __future__ import annotations
 import asyncio
 
 from alembic import context
-from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import create_async_engine
 
 import agentstudio.models  # noqa: F401  (registers every table on the metadata)
 from agentstudio.core.config import get_settings
 from agentstudio.db.base import Base
+from agentstudio.db.session import create_engine
 
 config = context.config
 target_metadata = Base.metadata
@@ -29,7 +28,7 @@ def _configure(connection: Connection) -> None:
 
 
 async def _run_with_new_engine() -> None:
-    engine = create_async_engine(get_settings().database_url, poolclass=pool.NullPool)
+    engine = create_engine(get_settings(), pooled=False, application_name="agentstudio-alembic")
     async with engine.begin() as connection:
         await connection.run_sync(_configure)
     await engine.dispose()
