@@ -1,0 +1,46 @@
+# Integration test dependencies: Postgres, Redis and the Floci AWS emulator on the extras
+# ports (9121 to 9123), as their own compose project so they never touch the main stack.
+#
+#   scripts/test-deps.sh        start and wait until every service answers
+#   scripts/test-deps.sh down   stop and delete their data
+#
+# Nothing here is provisioned up front: the integration suite creates its own database
+# schema, SQS queues and S3 bucket, so every session starts from a clean slate.
+name: agentstudio-test
+
+services:
+  postgres:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_DB: agentstudio_test
+      POSTGRES_USER: agentstudio
+      POSTGRES_PASSWORD: agentstudio
+    command: ["postgres", "-c", "fsync=off", "-c", "full_page_writes=off", "-c", "synchronous_commit=off"]
+    ports:
+      - "127.0.0.1:${AGENTSTUDIO_TEST_PG_PORT:-9121}:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentstudio -d agentstudio_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: valkey/valkey:8.1.10-alpine
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:${AGENTSTUDIO_TEST_REDIS_PORT:-9122}:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  floci:
+    image: floci/floci:2.3.0
+    environment:
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_STORAGE_MODE: memory
+    ports:
+      - "127.0.0.1:${AGENTSTUDIO_TEST_FLOCI_PORT:-9123}:4566"
