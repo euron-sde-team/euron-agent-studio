@@ -71,6 +71,8 @@ def test_filters() -> None:
     assert evaluate("inputs.amount | round(0)", SCOPE) == 42.0
     assert evaluate("search.results[0] | json", SCOPE) == '{"title": "Refunds", "score": 0.9}'
     assert render("{{ inputs.subject | lower | trim }}", SCOPE) == "refund request"
+    assert evaluate('classify.json.tags | join("\\n")', SCOPE) == "billing\nrefund"
+    assert evaluate("classify.json.tags | join('\\n')", SCOPE) == "billing\\nrefund"
 
 
 def test_unknown_filters_and_bad_arguments_fail_clearly() -> None:

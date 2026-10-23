@@ -134,8 +134,9 @@ def _split_top_level(text: str, separator: str) -> list[str]:
 
 
 def _literal(text: str) -> Any:
+    """A filter argument: JSON (so "\\n" is a newline in double quotes), or raw in single quotes."""
     token = text.strip()
-    if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
+    if len(token) >= 2 and token[0] == token[-1] == "'":
         return token[1:-1]
     try:
         return json.loads(token)
