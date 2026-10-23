@@ -236,10 +236,40 @@ def parse_request(messages: list[dict[str, Any]]) -> Prompt:
     return prompt
 
 
+_STRUCTURED_LINE = re.compile(
+    r"^\s*(?:[-*#|>]|\d+[.)]\s|\[\d+\]|[A-Z][a-zA-Z.'-]+(?: [A-Z][a-zA-Z.'-]+)?:\s)"
+)
+
+
+def unwrap(text: str) -> str:
+    """Join hard-wrapped prose lines (Markdown paragraphs) back into single lines.
+
+    Lists, headings, tables, speaker lines and short lines (signatures, addresses) keep
+    their line breaks; a long line followed by more prose is a wrapped sentence.
+    """
+    lines = normalize(text).split("\n")
+    merged: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if (
+            merged
+            and stripped
+            and merged[-1]
+            and len(merged[-1].split()) >= 8
+            and not merged[-1].endswith(":")
+            and not _STRUCTURED_LINE.match(stripped)
+            and not _STRUCTURED_LINE.match(merged[-1])
+        ):
+            merged[-1] = f"{merged[-1]} {stripped}"
+        else:
+            merged.append(stripped)
+    return "\n".join(merged)
+
+
 def sentences(text: str) -> list[str]:
     """Sentences of a text, line breaks respected, greetings and sign-offs dropped."""
     found: list[str] = []
-    lines = [line.strip() for line in normalize(text).split("\n")]
+    lines = [line.strip() for line in unwrap(text).split("\n")]
     for index, line in enumerate(lines):
         if not line or _GREETING.match(line) or _SIGNOFF.match(line):
             continue

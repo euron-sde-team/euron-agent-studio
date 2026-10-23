@@ -8,6 +8,7 @@ produces the same text.
 
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter
 from dataclasses import dataclass
@@ -73,8 +74,12 @@ def parse_sources(context: str) -> list[Source]:
 def relevant(
     query: str, context: str, count: int, *, min_overlap: int = 1
 ) -> list[tuple[Source, str]]:
-    """The context sentences that share the most (rarer) words with the query."""
-    wanted = set(content_terms(query))
+    """The context sentences that best match the query, in the order they appear.
+
+    Words the query repeats weigh more (a ticket that says "charge" three times is about
+    charges), and words that are rare in the context weigh more than common ones.
+    """
+    wanted = Counter(content_terms(query))
     sources = parse_sources(context)
     candidates: list[tuple[Source, str, set[str]]] = []
     for source in sources:
@@ -84,29 +89,30 @@ def relevant(
             candidates.append((source, sentence, set(content_terms(sentence))))
     document_frequency = Counter(term for _, _, terms in candidates for term in terms)
     total = max(1, len(candidates))
-    scored: list[tuple[float, int, Source, str]] = []
-    for index, (source, sentence, terms) in enumerate(candidates):
-        overlap = terms & wanted
+    scored: list[tuple[float, int]] = []
+    for index, (_, sentence, terms) in enumerate(candidates):
+        overlap = terms & set(wanted)
         if len(overlap) < min_overlap:
             continue
-        score = sum(1.0 + (total / document_frequency[term]) ** 0.5 for term in overlap)
+        score = sum(
+            (1.0 + math.log(wanted[term])) * (1.0 + (total / document_frequency[term]) ** 0.5)
+            for term in overlap
+        )
         if re.search(r"\d", sentence) and re.search(
-            r"\b(how (?:many|much|long|soon)|when|price|cost)\b", query, re.I
+            r"\b(how (?:many|much|long|soon)|when|price|cost|refund)", query, re.I
         ):
             score += 1.5
-        scored.append((score, -index, source, sentence))
-    scored.sort(key=lambda item: (-item[0], -item[1]))
-    chosen: list[tuple[Source, str]] = []
+        scored.append((score, index))
+    scored.sort(key=lambda item: (-item[0], item[1]))
     best = scored[0][0] if scored else 0.0
-    for score, _, source, sentence in scored:
-        # Only sentences nearly as relevant as the best one: no padding with weak matches.
-        if score < 0.6 * best:
-            break
-        if sentence not in {s for _, s in chosen}:
-            chosen.append((source, sentence))
-        if len(chosen) == count:
-            break
-    return chosen
+    # Only sentences nearly as relevant as the best one: no padding with weak matches.
+    chosen = sorted(index for score, index in scored[:count] if score >= 0.6 * best)
+    picked: list[tuple[Source, str]] = []
+    for index in chosen:
+        source, sentence, _ = candidates[index]
+        if sentence not in {s for _, s in picked}:
+            picked.append((source, sentence))
+    return picked
 
 
 def sign_off(prompt: Prompt, default: str) -> str:
