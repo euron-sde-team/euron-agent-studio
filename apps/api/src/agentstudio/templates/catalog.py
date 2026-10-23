@@ -9,7 +9,8 @@ installed. HTTP nodes call the built-in sandbox API, so every template runs offl
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import copy
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 SANDBOX = "https://sandbox.agentstudio.test"
@@ -1127,11 +1128,24 @@ POLICY_ASSISTANT = Template(
     ),
 )
 
-TEMPLATES: tuple[Template, ...] = (
-    SUPPORT_TRIAGE,
-    INVOICE_EXTRACTION,
-    RESEARCH_BRIEF,
-    LEAD_QUALIFICATION,
-    MEETING_ACTIONS,
-    POLICY_ASSISTANT,
+
+def _with_sample(template: Template) -> Template:
+    """Store the sample inputs in the Start node too: the run dialog and exports use them."""
+    graph_copy = copy.deepcopy(template.graph)
+    for item in graph_copy["nodes"]:
+        if item["type"] == "start":
+            item["config"]["sample"] = dict(template.sample)
+    return replace(template, graph=graph_copy)
+
+
+TEMPLATES: tuple[Template, ...] = tuple(
+    _with_sample(template)
+    for template in (
+        SUPPORT_TRIAGE,
+        INVOICE_EXTRACTION,
+        RESEARCH_BRIEF,
+        LEAD_QUALIFICATION,
+        MEETING_ACTIONS,
+        POLICY_ASSISTANT,
+    )
 )
