@@ -173,9 +173,17 @@ _CANDIDATES = re.compile(
 )
 
 
+# "Classify the ticket as billing, technical or account."
+_AS_CANDIDATES = re.compile(
+    r"\b(?:classify|categori[sz]e|label|tag)\b[^.\n:]{0,80}?\bas\s+(?:either\s+)?"
+    r"([a-z0-9_ ,/|-]{3,200})",
+    re.I,
+)
+
+
 def candidate_labels(request: str) -> list[str]:
     """Labels offered in free text: "one of: billing, technical, account"."""
-    match = _CANDIDATES.search(request)
+    match = _CANDIDATES.search(request) or _AS_CANDIDATES.search(request)
     if not match:
         return []
     raw = re.split(r"[,/|]|\bor\b", match.group(1).split(".")[0].split("\n")[0])

@@ -78,7 +78,14 @@ def test_candidate_labels_are_read_from_free_text() -> None:
         "technical",
         "account",
     ]
+    assert candidate_labels("Classify the ticket as billing, technical or account.") == [
+        "billing",
+        "technical",
+        "account",
+    ]
+    assert candidate_labels("Label it as either urgent or routine") == ["urgent", "routine"]
     assert candidate_labels("no options here") == []
+    assert candidate_labels("Classify this as soon as you can") == []
 
 
 def test_invoice_values_are_extracted() -> None:
