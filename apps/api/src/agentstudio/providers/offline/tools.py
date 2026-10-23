@@ -44,6 +44,10 @@ _SEARCH_OBJECT = re.compile(
 _WANTS_EMAIL = re.compile(
     r"\b(email|e-mail|outreach|message to|reply|respond|write to|draft)\b", re.I
 )
+# "17.5 percent of 2,400", "15% of 80"
+_PERCENT_OF = re.compile(
+    r"(\d[\d,]*(?:\.\d+)?)\s*(?:%|percent|per cent)\s+of\s+(\d[\d,]*(?:\.\d+)?)", re.I
+)
 _WANTS_MATH = re.compile(
     r"\b(calculate|compute|total|price|pricing|cost|quote|how much|annual|per year|yearly|sum)\b",
     re.I,
@@ -137,6 +141,11 @@ def _expression(prompt: Prompt) -> str | None:
     explicit = _EXPRESSION.search(task)
     if explicit and re.search(r"[-+*/x%]", explicit.group(1)):
         return explicit.group(1).replace("x", "*").strip()
+    percent = _PERCENT_OF.search(task)
+    if percent:
+        share, whole = (extract.parse_number(group) for group in percent.groups())
+        if share is not None and whole is not None:
+            return f"{float(whole):g} * {float(share):g} / 100"
     if not _WANTS_MATH.search(task):
         return None
     seats = _seats(prompt)
@@ -283,6 +292,13 @@ def _money(amount: float, symbol: str = "$") -> str:
     return f"{symbol}{amount:,.0f}" if float(amount).is_integer() else f"{symbol}{amount:,.2f}"
 
 
+def _number(value: float) -> str:
+    """420.0 reads as 420; fractions keep up to four places, without trailing zeros."""
+    if float(value).is_integer():
+        return f"{int(value):,}"
+    return f"{value:,.4f}".rstrip("0").rstrip(".")
+
+
 def final_answer(prompt: Prompt) -> str:
     knowledge = "\n\n".join(
         result.content["context"]
@@ -314,7 +330,7 @@ def final_answer(prompt: Prompt) -> str:
     if knowledge:
         parts.append(answer(question_of(prompt), knowledge))
     if totals:
-        parts.append(f"The calculation comes to {totals[-1]:,}.")
+        parts.append(f"The calculation comes to {_number(totals[-1])}.")
     for result in prompt.tool_results:
         if (
             isinstance(result.content, dict)

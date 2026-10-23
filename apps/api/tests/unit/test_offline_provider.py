@@ -263,6 +263,13 @@ def test_agents_answer_questions_with_their_search_tool() -> None:
     assert "25 days of paid vacation" in answer
 
 
+def test_agents_work_out_percentages_with_the_calculator() -> None:
+    tools = [runtime.tool_definition("calculator", {}, "calculator")]
+    answer, calls = run_agent("You do arithmetic.", "What is 17.5 percent of 2,400?", tools, "")
+    assert calls == [("calculator", {"expression": "2400 * 17.5 / 100"})]
+    assert answer == "The calculation comes to 420."
+
+
 def test_answers_longer_than_max_tokens_report_length() -> None:
     response = ask("Write.", f"Summarize the meeting.\n\nNotes:\n{NOTES}", max_tokens=5)
     assert response.finish_reason == "length"
