@@ -40,4 +40,4 @@ class ApiKeyRepository(Repository):
         result = await self.session.execute(
             select(ApiKey.id, ApiKey.name).where(ApiKey.id.in_(key_ids))
         )
-        return dict(result.tuples().all())
+        return {row[0]: row[1] for row in result.all()}

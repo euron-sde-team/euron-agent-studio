@@ -28,4 +28,4 @@ class UserRepository(Repository):
         if not user_ids:
             return {}
         result = await self.session.execute(select(User.id, User.name).where(User.id.in_(user_ids)))
-        return dict(result.tuples().all())
+        return {row[0]: row[1] for row in result.all()}
