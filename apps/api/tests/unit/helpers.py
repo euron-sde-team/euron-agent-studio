@@ -5,13 +5,17 @@ from __future__ import annotations
 import asyncio
 import itertools
 import uuid
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import Any
 
+from agentstudio.core.text import content_terms
 from agentstudio.engine.graph import GraphDocument
 from agentstudio.engine.ports import EngineServices, HttpResponse, ModelResult
+from agentstudio.ingestion.chunker import chunk_document, title_of
 from agentstudio.providers.base import ChatRequest, ChatResponse, ToolCall
+from agentstudio.templates import TEMPLATES, knowledge_documents
 
 KB_ID = uuid.UUID("00000000-0000-7000-8000-00000000000b")
 _x = itertools.count()
@@ -167,3 +171,35 @@ def tool_call_response(*calls: tuple[str, str]) -> ChatResponse:
         completion_tokens=8,
         finish_reason="tool_calls",
     )
+
+
+class MemoryKnowledge:
+    """Keyword search over the bundled documents, standing in for Postgres full-text search."""
+
+    def __init__(self) -> None:
+        self.chunks: dict[uuid.UUID, list[dict[str, Any]]] = {}
+
+    def load(self, name: str) -> uuid.UUID:
+        spec = next(k for t in TEMPLATES for k in t.knowledge if k.name == name)
+        kb_id = uuid.uuid4()
+        rows: list[dict[str, Any]] = []
+        for filename, data in knowledge_documents(spec):
+            text = data.decode()
+            title = title_of(text, filename)
+            rows.extend(
+                {"title": title, "heading": chunk.heading, "text": chunk.text}
+                for chunk in chunk_document(text, title=title)
+            )
+        self.chunks[kb_id] = rows
+        return kb_id
+
+    async def search(self, kb_id: uuid.UUID, query: str, top_k: int) -> list[dict[str, Any]]:
+        wanted = set(content_terms(query))
+        scored = []
+        for row in self.chunks[kb_id]:
+            terms = Counter(content_terms(row["heading"] + " " + row["text"]))
+            score = sum(terms[term] for term in wanted)
+            if score:
+                scored.append((score, row))
+        scored.sort(key=lambda pair: -pair[0])
+        return [{**row, "snippet": row["text"][:120], "score": s} for s, row in scored[:top_k]]

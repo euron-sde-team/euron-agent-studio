@@ -1,20 +1,17 @@
 """Every template runs end to end, offline: the real engine, offline model and sandbox."""
 
 import uuid
-from collections import Counter
 from typing import Any
 
 import pytest
 
 from agentstudio.core.config import Settings
-from agentstudio.core.text import content_terms
 from agentstudio.engine.executor import Executor, Limits
 from agentstudio.engine.graph import GraphDocument
 from agentstudio.engine.plan import build_plan
 from agentstudio.engine.ports import EngineServices
 from agentstudio.engine.recorder import MemoryRecorder
 from agentstudio.engine.validate import validate_graph
-from agentstudio.ingestion.chunker import chunk_document, title_of
 from agentstudio.integrations.http import GuardedHttpClient, NetworkPolicy
 from agentstudio.integrations.sandbox import create_sandbox_app
 from agentstudio.providers.registry import ModelRegistry
@@ -25,39 +22,7 @@ from agentstudio.templates import (
     knowledge_documents,
     knowledge_names,
 )
-from tests.unit.helpers import FakeCancel
-
-
-class MemoryKnowledge:
-    """Keyword search over the bundled documents, standing in for Postgres full-text search."""
-
-    def __init__(self) -> None:
-        self.chunks: dict[uuid.UUID, list[dict[str, Any]]] = {}
-
-    def load(self, name: str) -> uuid.UUID:
-        spec = next(k for t in TEMPLATES for k in t.knowledge if k.name == name)
-        kb_id = uuid.uuid4()
-        rows: list[dict[str, Any]] = []
-        for filename, data in knowledge_documents(spec):
-            text = data.decode()
-            title = title_of(text, filename)
-            rows.extend(
-                {"title": title, "heading": chunk.heading, "text": chunk.text}
-                for chunk in chunk_document(text, title=title)
-            )
-        self.chunks[kb_id] = rows
-        return kb_id
-
-    async def search(self, kb_id: uuid.UUID, query: str, top_k: int) -> list[dict[str, Any]]:
-        wanted = set(content_terms(query))
-        scored = []
-        for row in self.chunks[kb_id]:
-            terms = Counter(content_terms(row["heading"] + " " + row["text"]))
-            score = sum(terms[term] for term in wanted)
-            if score:
-                scored.append((score, row))
-        scored.sort(key=lambda pair: -pair[0])
-        return [{**row, "snippet": row["text"][:120], "score": s} for s, row in scored[:top_k]]
+from tests.unit.helpers import FakeCancel, MemoryKnowledge
 
 
 async def run_template(
