@@ -96,6 +96,18 @@ class FlowRepository(Repository):
         )
         return {flow_id: FlowStats(total, ok, bad) for flow_id, total, ok, bad in result.all()}
 
+    async def counts(self, workspace_id: uuid.UUID) -> tuple[int, int]:
+        """(flows, published flows) in a workspace."""
+        row = (
+            await self.session.execute(
+                select(
+                    func.count(),
+                    func.count(case((Flow.published_version_id.is_not(None), 1))),
+                ).where(Flow.workspace_id == workspace_id)
+            )
+        ).one()
+        return int(row[0]), int(row[1])
+
     async def tags(self, workspace_id: uuid.UUID) -> list[str]:
         tag = func.unnest(Flow.tags).label("tag")
         result = await self.session.execute(

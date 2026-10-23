@@ -33,3 +33,11 @@ class ApiKeyRepository(Repository):
         self.session.add(key)
         await self.session.flush()
         return key
+
+    async def names(self, key_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+        if not key_ids:
+            return {}
+        result = await self.session.execute(
+            select(ApiKey.id, ApiKey.name).where(ApiKey.id.in_(key_ids))
+        )
+        return dict(result.tuples().all())

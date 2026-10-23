@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import aliased
 
 from agentstudio.models import Flow, Membership, User, Workspace
 from agentstudio.models.enums import Role
@@ -38,9 +39,23 @@ class WorkspaceRepository(Repository):
         return await self.session.get(Membership, (workspace_id, user_id))
 
     async def for_user(self, user_id: uuid.UUID) -> list[WorkspaceSummary]:
-        flows = select(func.count()).where(Flow.workspace_id == Workspace.id).scalar_subquery()
+        # The outer query joins memberships too, so the member count reads an alias of the
+        # table and correlates on workspaces only; otherwise both tables would be correlated
+        # away and the subquery would have nothing to count.
+        others = aliased(Membership)
+        flows = (
+            select(func.count())
+            .select_from(Flow)
+            .where(Flow.workspace_id == Workspace.id)
+            .correlate(Workspace)
+            .scalar_subquery()
+        )
         members = (
-            select(func.count()).where(Membership.workspace_id == Workspace.id).scalar_subquery()
+            select(func.count())
+            .select_from(others)
+            .where(others.workspace_id == Workspace.id)
+            .correlate(Workspace)
+            .scalar_subquery()
         )
         result = await self.session.execute(
             select(Workspace, Membership.role, flows, members)

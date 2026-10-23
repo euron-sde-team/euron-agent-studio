@@ -45,10 +45,14 @@ class RunRepository(Repository):
         await self.session.flush()
         return run
 
-    async def get(self, workspace_id: uuid.UUID, run_id: uuid.UUID) -> Run | None:
-        result = await self.session.execute(
-            select(Run).where(Run.id == run_id, Run.workspace_id == workspace_id)
-        )
+    async def get(
+        self, workspace_id: uuid.UUID, run_id: uuid.UUID, *, fresh: bool = False
+    ) -> Run | None:
+        """A run; `fresh` re-reads every column even if this session already holds the row."""
+        query = select(Run).where(Run.id == run_id, Run.workspace_id == workspace_id)
+        if fresh:
+            query = query.execution_options(populate_existing=True)
+        result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
     async def claim(self, workspace_id: uuid.UUID, run_id: uuid.UUID, now: datetime) -> Run | None:
