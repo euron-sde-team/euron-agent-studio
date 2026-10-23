@@ -35,9 +35,10 @@ REAPER_INTERVAL_S = 30
 
 
 class Worker:
-    def __init__(self, container: Container, queue: SqsQueue) -> None:
+    def __init__(self, container: Container, queue: SqsQueue, *, poll_s: int = 10) -> None:
         self.c = container
         self.queue = queue
+        self.poll_s = poll_s
         self.execution = RunExecution(container)
         self.concurrency = container.settings.worker_concurrency
         self.stopping = asyncio.Event()
@@ -50,25 +51,27 @@ class Worker:
 
     async def run(self) -> None:
         reaper = asyncio.create_task(self._reaper())
-        while not self.stopping.is_set():
-            free = self.concurrency - len(self.inflight)
-            if free <= 0:
-                await asyncio.wait(list(self.inflight), return_when=asyncio.FIRST_COMPLETED)
-                continue
-            try:
-                received = await self.queue.receive(
-                    max_messages=min(10, free), wait_s=10, visibility_s=VISIBILITY_S
-                )
-            except Exception:
-                log.exception("queue_receive_failed")
-                await asyncio.sleep(5)
-                continue
-            for item in received:
-                task = asyncio.create_task(self._handle(item))
-                self.inflight[task] = item
-                task.add_done_callback(lambda done: self.inflight.pop(done, None))
-        await self._drain()
-        reaper.cancel()
+        try:
+            while not self.stopping.is_set():
+                free = self.concurrency - len(self.inflight)
+                if free <= 0:
+                    await asyncio.wait(list(self.inflight), return_when=asyncio.FIRST_COMPLETED)
+                    continue
+                try:
+                    received = await self.queue.receive(
+                        max_messages=min(10, free), wait_s=self.poll_s, visibility_s=VISIBILITY_S
+                    )
+                except Exception:
+                    log.exception("queue_receive_failed")
+                    await asyncio.sleep(5)
+                    continue
+                for item in received:
+                    task = asyncio.create_task(self._handle(item))
+                    self.inflight[task] = item
+                    task.add_done_callback(lambda done: self.inflight.pop(done, None))
+            await self._drain()
+        finally:
+            reaper.cancel()
 
     async def _drain(self) -> None:
         if not self.inflight:
