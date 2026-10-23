@@ -384,8 +384,14 @@ def vendor_name(text: str, fields: Mapping[str, str]) -> str | None:
         lowered = candidate.lower()
         if not candidate or "invoice" in lowered or ":" in candidate or "@" in candidate:
             continue
-        if _COMPANY_SUFFIX.search(candidate) or (
-            candidate.istitle() and len(candidate.split()) <= 5
+        words = candidate.split()
+        letterhead = (
+            candidate.isupper() and 1 <= len(words) <= 6 and not re.search(r"\d", candidate)
+        )
+        if (
+            _COMPANY_SUFFIX.search(candidate)
+            or letterhead
+            or (candidate.istitle() and len(words) <= 5)
         ):
             return _tidy_name(candidate.strip(" ,"))
     return None

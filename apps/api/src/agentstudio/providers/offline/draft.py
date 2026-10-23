@@ -263,9 +263,7 @@ def email(prompt: Prompt, facts: list[str], *, price_line: str | None = None) ->
     if message and message != prompt.user:
         gist = key_sentences(message, 1)
         if gist:
-            paragraphs[-1] += (
-                " You mentioned that " + _lower_first(second_person(gist[0]).rstrip(".")) + "."
-            )
+            paragraphs[-1] += " " + _mention(gist[0])
     if facts:
         paragraphs.append(" ".join(facts))
     if price_line:
@@ -284,6 +282,16 @@ def email(prompt: Prompt, facts: list[str], *, price_line: str | None = None) ->
         )
     paragraphs.append("Best regards,\n" + sign_off(prompt, "The Sales Team"))
     return "\n\n".join(paragraphs)
+
+
+_SUBJECT_START = re.compile(r"^(i|i'm|i've|we|we're|we've|our|my|us)\b", re.I)
+
+
+def _mention(sentence: str) -> str:
+    """Echo what the person said, in the second person when it has a subject to turn."""
+    if _SUBJECT_START.match(sentence):
+        return "You mentioned that " + _lower_first(second_person(sentence).rstrip(".")) + "."
+    return f'You wrote: "{sentence.rstrip()}"'
 
 
 def _company_in_instruction(prompt: Prompt) -> str | None:
