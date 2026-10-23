@@ -269,14 +269,11 @@ class AgentHandler:
                         else {"error": f"There is no tool named {call.name!r}."}
                     )
                 messages.append(runtime.tool_message(call.id, value))
-                record = {
-                    "name": call.name,
-                    "arguments": args,
-                    "result": value,
-                    "latency_ms": int((time.monotonic() - started) * 1000),
-                }
+                # The output stays deterministic; how long the call took goes to the trace.
+                record = {"name": call.name, "arguments": args, "result": value}
                 calls.append(record)
-                await ctx.emit({"type": "tool_call", **record})
+                latency_ms = int((time.monotonic() - started) * 1000)
+                await ctx.emit({"type": "tool_call", **record, "latency_ms": latency_ms})
         else:
             # Out of iterations: ask for the final answer with the tools taken away.
             result = await complete(ctx, config, messages, usage, tools=None)
