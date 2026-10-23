@@ -78,6 +78,7 @@ ignore = [
 # Template, demo and sandbox modules hold long realistic text.
 "src/agentstudio/demo/**" = ["E501"]
 "src/agentstudio/integrations/sandbox/**" = ["E501"]
+"src/agentstudio/templates/catalog.py" = ["E501"]  # template prompts and sample documents
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
