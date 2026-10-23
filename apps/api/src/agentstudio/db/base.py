@@ -40,5 +40,9 @@ class IdMixin:
 
 
 class TimestampMixin:
+    # Fetch server-side values (updated_at on UPDATE) with RETURNING in the same statement:
+    # otherwise reading updated_at after a flush is a lazy load, which async sessions forbid.
+    __mapper_args__ = {"eager_defaults": True}
+
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
