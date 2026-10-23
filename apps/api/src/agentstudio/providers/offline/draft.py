@@ -11,6 +11,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from agentstudio.core.text import content_terms, truncate
@@ -102,17 +103,49 @@ def relevant(
             r"\b(how (?:many|much|long|soon)|when|price|cost|refund)", query, re.I
         ):
             score += 1.5
+        score += _intent_bonus(query, sentence)
         scored.append((score, index))
     scored.sort(key=lambda item: (-item[0], item[1]))
     best = scored[0][0] if scored else 0.0
     # Only sentences nearly as relevant as the best one: no padding with weak matches.
-    chosen = sorted(index for score, index in scored[:count] if score >= 0.6 * best)
+    chosen = sorted(index for score, index in scored[:count] if score >= 0.75 * best)
     picked: list[tuple[Source, str]] = []
     for index in chosen:
         source, sentence, _ = candidates[index]
         if sentence not in {s for _, s in picked}:
             picked.append((source, sentence))
     return picked
+
+
+# What a question is really after, and what a sentence that answers it sounds like.
+_INTENTS = (
+    (
+        re.compile(
+            r"\b(risks?|issues?|concerns?|problems?|challenges?|blockers?|downsides?)\b", re.I
+        ),
+        re.compile(
+            r"\b(risks?|concerns?|issues?|harder|problems?|challenges?|misunderstood|delays?|"
+            r"regressions?|drift(?:ed)?|difficult|did not know|downtime|caused)\b",
+            re.I,
+        ),
+    ),
+    (
+        re.compile(r"\b(next|should|recommend\w*|actions?|plan)\b", re.I),
+        re.compile(r"\b(should|must|need to|recommend\w*|next step|plan to|expand)\b", re.I),
+    ),
+    (
+        re.compile(r"\b(measured|tracked|metrics?|results?|worked)\b", re.I),
+        re.compile(r"\b(percent|rate|score|points?|reached|fell|rose|cut|saving)\b|\d", re.I),
+    ),
+)
+
+
+def _intent_bonus(query: str, sentence: str) -> float:
+    bonus = 0.0
+    for asked, answers in _INTENTS:
+        if asked.search(query) and answers.search(sentence):
+            bonus += 4.0
+    return bonus
 
 
 def sign_off(prompt: Prompt, default: str) -> str:
@@ -325,28 +358,51 @@ def brief(prompt: Prompt) -> str:
         lines.append(f"Prepared for {audience}.")
     lines += ["", "## Summary"]
     bodies = "\n".join(body for _, body in blocks) if blocks else findings
-    summary_sentences = key_sentences(bodies, 2)
+    summary_sentences = _unique(key_sentences(bodies, 4))[:2]
     lines.append(
         " ".join(summary_sentences) if summary_sentences else "No findings were available."
     )
     lines += ["", "## Key findings"]
+    used: set[str] = set()
     for heading, body in blocks or [("", findings)]:
-        first = key_sentences(body, 1)
-        if not first:
+        ranked = _unique(key_sentences(body, 3))
+        if not ranked:
             continue
-        lines.append(f"- **{heading}** {first[0]}" if heading else f"- {first[0]}")
+        # Prefer a sentence no other finding used; repeat one rather than drop the finding.
+        chosen = next((s for s in ranked if _plain(s) not in used), ranked[0])
+        used.add(_plain(chosen))
+        lines.append(f"- **{heading}** {chosen}" if heading else f"- {chosen}")
     lines += ["", "## Recommendations"]
-    recommendations = [
+    recommendations = _unique(
         s for s in sentences(findings) if _RECOMMEND.search(s) and not s.startswith("#")
-    ]
+    )
     if recommendations:
-        lines += [f"- {s}" for s in list(dict.fromkeys(recommendations))[:3]]
+        lines += [f"- {s}" for s in recommendations[:3]]
     else:
         lines.append(
             f"- Review these findings with {audience or 'the team'} and agree on an owner for "
             "each open item."
         )
     return "\n".join(lines)
+
+
+_CITATION = re.compile(r"\s*\[\d+\]")
+
+
+def _plain(sentence: str) -> str:
+    return _CITATION.sub("", sentence).strip().lower()
+
+
+def _unique(found: Iterable[str]) -> list[str]:
+    """Sentences once each, treating "X [1]." and "X [2]." as the same sentence."""
+    seen: set[str] = set()
+    kept: list[str] = []
+    for sentence in found:
+        key = _plain(sentence)
+        if key not in seen:
+            seen.add(key)
+            kept.append(sentence)
+    return kept
 
 
 def _finding_blocks(text: str) -> list[tuple[str, str]]:

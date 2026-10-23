@@ -19,7 +19,7 @@ from agentstudio.core.text import content_terms, truncate
 from agentstudio.providers.base import ToolCall
 from agentstudio.providers.offline import extract
 from agentstudio.providers.offline.draft import answer, email, question_of, relevant
-from agentstudio.providers.offline.prompt import Prompt, ToolResult
+from agentstudio.providers.offline.prompt import Prompt, ToolResult, unwrap
 
 _EXPRESSION = re.compile(r"(?<![\w.])(\(?\s*-?\d[\d.]*(?:\s*[-+*/x%]\s*\(?\s*-?\d[\d.]*\s*\)?)+)")
 _PRICE = re.compile(
@@ -236,7 +236,7 @@ def plan(prompt: Prompt, tools: list[dict[str, Any]]) -> list[ToolCall]:
 def _result_text(content: Any) -> str:
     if isinstance(content, dict):
         if isinstance(content.get("context"), str):
-            return str(content["context"])
+            return unwrap(str(content["context"]))
         if "json" in content:
             return json.dumps(content["json"], ensure_ascii=False)
         return json.dumps(content, ensure_ascii=False)
@@ -271,7 +271,7 @@ def _facts_for_email(prompt: Prompt, knowledge: str, seats: int | None) -> list[
 
 
 def _sentence_after(text: str, sentence: str) -> str | None:
-    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n", text) if part.strip()]
+    parts = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n", unwrap(text)) if part.strip()]
     for index, part in enumerate(parts[:-1]):
         following = parts[index + 1]
         if part == sentence and not following.startswith("["):

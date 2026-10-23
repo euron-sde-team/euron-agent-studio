@@ -78,7 +78,7 @@ def rank(found: list[str], *, focus: Iterable[str] = ()) -> list[tuple[float, in
 
 
 def key_sentences(text: str, count: int, *, focus: Iterable[str] = ()) -> list[str]:
-    found = sentences(text)
+    found = list(dict.fromkeys(sentences(text)))
     chosen = sorted(index for _, index in rank(found, focus=focus)[:count])
     return [found[index] for index in chosen]
 
