@@ -1,0 +1,26 @@
+{
+  "name": "euron-agent-studio",
+  "private": true,
+  "description": "Euron AgentStudio: build agent workflows on a canvas, watch them run, export them as Python.",
+  "license": "MIT",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @agentstudio/web dev",
+    "lint": "pnpm -r --parallel lint",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "pnpm --filter @agentstudio/web test",
+    "build": "pnpm --filter @agentstudio/web build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "e2e": "pnpm --filter @agentstudio/e2e test",
+    "qa": "pnpm --filter @agentstudio/e2e qa",
+    "capture": "pnpm --filter @agentstudio/e2e capture"
+  },
+  "devDependencies": {
+    "prettier": "3.9.10",
+    "prettier-plugin-tailwindcss": "0.8.1"
+  }
+}
