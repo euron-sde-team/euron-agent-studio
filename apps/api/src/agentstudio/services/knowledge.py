@@ -257,11 +257,13 @@ class KnowledgeService:
         document = await self.document(workspace_id, document_id)
         return document, await self.c.storage.get(document.storage_key)
 
-    async def search(
+    async def search_with_context(
         self, workspace_id: uuid.UUID, kb_id: uuid.UUID, query: str, top_k: int
-    ) -> list[SearchHit]:
+    ) -> tuple[list[SearchHit], str]:
+        """Hits and the numbered context a Knowledge search node would hand a prompt."""
         await self.get(workspace_id, kb_id)
-        return await self.repo.search(workspace_id, kb_id, query, top_k)
+        hits = await self.repo.search(workspace_id, kb_id, query, top_k)
+        return hits, runtime.knowledge_context([hit_dict(hit) for hit in hits])
 
     async def _delete_files(self, keys: list[str]) -> None:
         for key in keys:
@@ -293,7 +295,3 @@ class WorkspaceKnowledge:
                 self.workspace_id, knowledge_base_id, query, top_k
             )
         return [hit_dict(hit) for hit in hits]
-
-
-def search_context(results: list[dict[str, Any]]) -> str:
-    return runtime.knowledge_context(results)
