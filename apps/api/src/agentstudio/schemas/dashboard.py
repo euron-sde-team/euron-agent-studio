@@ -22,7 +22,9 @@ class TopFlowOut(ApiModel):
     cost_usd: float
 
 
-class DashboardOut(ApiModel):
+class DashboardStats(ApiModel):
+    """The cached part of the dashboard: aggregates over the period."""
+
     period_days: int
     runs: int
     succeeded: int
@@ -40,4 +42,7 @@ class DashboardOut(ApiModel):
     published_flows: int
     daily: list[DayOut]
     top_flows: list[TopFlowOut]
+
+
+class DashboardOut(DashboardStats):
     recent_runs: list[RunOut]
