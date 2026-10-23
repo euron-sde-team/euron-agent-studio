@@ -24,7 +24,7 @@ from typing import Any
 from agentstudio import __version__
 from agentstudio.engine import runtime
 from agentstudio.engine.graph import NODE_SPECS, StartConfig
-from agentstudio.engine.plan import Plan, PlanNode
+from agentstudio.engine.plan import Plan, PlanNode, secret_names
 from agentstudio.providers.registry import split_ref
 
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]+")
@@ -75,26 +75,6 @@ def _models(plan: Plan) -> dict[str, str]:
             provider, model = split_ref(ref)
             wire[ref] = model if provider != "offline" else "offline"
     return wire
-
-
-def _secrets(plan: Plan) -> list[str]:
-    names: set[str] = set()
-    for node in plan.nodes.values():
-        for value in _strings(node.config.model_dump(mode="json")):
-            for path in runtime.template_paths(value) if "{{" in value else []:
-                if path and path[0] == "secrets" and len(path) > 1:
-                    names.add(str(path[1]))
-    return sorted(names)
-
-
-def _strings(value: Any) -> list[str]:
-    if isinstance(value, str):
-        return [value]
-    if isinstance(value, dict):
-        return [s for item in value.values() for s in _strings(item)]
-    if isinstance(value, list):
-        return [s for item in value for s in _strings(item)]
-    return []
 
 
 class _Writer:
@@ -237,7 +217,7 @@ def export_python(plan: Plan, info: ExportInfo) -> str:
     w.line(f"WORKSPACE = {info.workspace!r}")
     w.line(f"DEFAULT_AGENTSTUDIO_URL = {info.agentstudio_url.rstrip('/')!r}")
     w.line(f"MODELS = {literal(_models(plan))}")
-    w.line(f"SECRET_NAMES = {_secrets(plan)!r}")
+    w.line(f"SECRET_NAMES = {secret_names(plan)!r}")
     start = plan.nodes[plan.start_id].config
     sample = start.sample if isinstance(start, StartConfig) else {}
     w.line(f"SAMPLE_INPUTS = {literal(sample)}")

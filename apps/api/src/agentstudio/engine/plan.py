@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
+from agentstudio.engine import runtime
 from agentstudio.engine.graph import (
     NODE_SPECS,
     GraphDocument,
@@ -205,3 +206,26 @@ def build_plan(doc: GraphDocument, ctx: ValidationContext | None = None) -> Plan
         output_ids=output_ids,
         body_members={loop_id: frozenset(body) for loop_id, body in full_bodies.items()},
     )
+
+
+def secret_names(plan: Plan) -> list[str]:
+    """Every workspace secret the plan's templates refer to ({{secrets.NAME}})."""
+    names: set[str] = set()
+    for node in plan.nodes.values():
+        for value in _strings(node.config.model_dump(mode="json")):
+            if "{{" not in value:
+                continue
+            for path in runtime.template_paths(value):
+                if path and path[0] == "secrets" and len(path) > 1:
+                    names.add(str(path[1]))
+    return sorted(names)
+
+
+def _strings(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [s for item in value.values() for s in _strings(item)]
+    if isinstance(value, list):
+        return [s for item in value for s in _strings(item)]
+    return []
