@@ -110,7 +110,7 @@ export default function DashboardPage() {
               icon={<Timer />}
               label="Typical duration"
               value={formatDuration(data.p50_ms)}
-              detail={`95th percentile ${formatDuration(data.p95_ms)}`}
+              detail={`95th percentile ${formatDuration(data.p95_ms)}, waits included`}
             />
             <Kpi
               icon={<Coins />}
