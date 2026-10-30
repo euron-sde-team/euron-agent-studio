@@ -27,8 +27,12 @@ const LABELS: Record<string, (e: AuditEvent) => string> = {
   "webhook.rotated": () => "rotated a webhook signing secret",
   "webhook.disabled": () => "disabled a flow's webhook",
   "run.cancelled": () => "cancelled a run",
-  "approval.decided": (e) => `${name(e, "decision", "decided")} an approval`,
-  "approval.expired": () => "let an approval expire",
+  "approval.decided": (e) =>
+    e.details.title
+      ? `${name(e, "decision", "decided")} "${name(e, "title")}"`
+      : `${name(e, "decision", "decided")} a review`,
+  "approval.expired": (e) =>
+    e.details.title ? `let "${name(e, "title")}" expire` : "let a review expire",
   "knowledge_base.created": (e) => `created the knowledge base ${name(e)}`,
   "knowledge_base.updated": (e) => `updated the knowledge base ${name(e)}`,
   "knowledge_base.deleted": (e) => `deleted the knowledge base ${name(e)}`,
