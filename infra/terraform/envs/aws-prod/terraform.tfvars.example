@@ -6,6 +6,6 @@ alarm_email     = "oncall@example.com"
 
 # The offline model works with no key. To use a hosted model, store its key in Secrets
 # Manager and point the API at it:
-# default_model        = "openai/gpt-4o-mini"
+# default_model        = "openai:gpt-4o-mini"
 # extra_environment    = { OPENAI_BASE_URL = "https://api.openai.com/v1" }
 # provider_secret_arns = { OPENAI_API_KEY = "arn:aws:secretsmanager:us-east-1:123456789012:secret:models-AbCdEf:OPENAI_API_KEY::" }
