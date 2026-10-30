@@ -88,7 +88,14 @@ import {
   outputHandles,
   type NodeDefinition,
 } from "@/lib/nodes";
-import { canEdit, useFlowActions, useRunActions, useSaveDraft, useSecrets } from "@/lib/queries";
+import {
+  canEdit,
+  useFlowActions,
+  useRunActions,
+  useSaveDraft,
+  useSecrets,
+  useWorkspace,
+} from "@/lib/queries";
 import { PALETTE_KEY, readLocal, writeLocal } from "@/lib/storage";
 import { nodeStatuses } from "@/lib/trace";
 import type { Flow, FlowDocument, GraphDocument, GraphNode, Issue, Role } from "@/lib/types";
@@ -146,6 +153,8 @@ function EditorCanvas({
   const actions = useFlowActions(workspace, source.id);
   const runActions = useRunActions(workspace);
   const secrets = useSecrets(workspace, role !== "viewer");
+  // New Prompt and Agent steps start with the workspace's default model.
+  const defaultModel = useWorkspace(workspace).data?.settings.default_model ?? "offline";
 
   // Details and webhook changes arrive through the query cache; the graph stays the editor's.
   const [published, setPublished] = useState<Pick<Flow, "published_version" | "latest_version">>();
@@ -388,7 +397,7 @@ function EditorCanvas({
         type: definition.type,
         position: placed,
         label: "",
-        config: defaultConfig(definition.type),
+        config: defaultConfig(definition.type, defaultModel),
         settings: {},
       };
       setNodes((current) => [
@@ -418,7 +427,7 @@ function EditorCanvas({
         );
       }
     },
-    [readOnly, nodes, selected, reactFlow, remember, connect, touch],
+    [readOnly, nodes, selected, reactFlow, remember, connect, touch, defaultModel],
   );
 
   const updateNode = useCallback(

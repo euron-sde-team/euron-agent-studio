@@ -61,7 +61,7 @@ describe("node catalog", () => {
       const config = defaultConfig(definition.type as NodeType, "offline");
       expect(config).toBeTypeOf("object");
     }
-    expect(defaultConfig("llm", "openai/gpt-4o-mini").model).toBe("openai/gpt-4o-mini");
+    expect(defaultConfig("llm", "openai:gpt-4o-mini").model).toBe("openai:gpt-4o-mini");
     expect(defaultConfig("condition").routes).toHaveLength(1);
   });
 });
