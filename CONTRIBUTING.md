@@ -18,7 +18,7 @@ Requirements: Docker with Compose v2, Python 3.12 with [uv](https://docs.astral.
 Node.js 22 with pnpm 9 (`corepack enable`).
 
 ```bash
-make up          # Postgres, Redis, the AWS emulator (provisioned by Terraform), api, worker, web
+make up          # PostgreSQL, Valkey, the AWS emulator (provisioned by Terraform), api, worker, web
 make demo        # a demo workspace with template flows, knowledge bases and real runs
 make test        # unit tests for the API (pytest) and the web app (Vitest)
 ```
@@ -32,7 +32,7 @@ Each of these must pass:
 
 ```bash
 make lint typecheck test
-make test-integration                  # the API against real Postgres, Redis and the AWS emulator
+make test-integration                  # the API against real PostgreSQL, Valkey and the AWS emulator
 make e2e                               # when you touched a user flow, the web app or infrastructure
 make tf-validate tf-lint tf-security   # when you touched infra/terraform
 make sanitize                          # no credentials, account ids or resource ids
@@ -53,8 +53,10 @@ route as a non-member and asserts that nothing is returned or changed.
 **The engine is pure where it can be.** Graph validation, templating, conditions, the
 calculator, JSON transforms, the offline model and the Python exporter take plain data and
 return plain data, so they are unit tested without a database. A new node type needs a
-config model in `engine/graph.py`, validation rules, an executor in `engine/nodes/`, an
-exporter case in `export/python.py`, an inspector form in the web app, and tests for each.
+config model in `engine/graph.py`, validation rules in `engine/validate.py`, a handler in
+`engine/nodes.py`, an exporter case in `export/python.py`, a catalog entry and an inspector
+form in the web app (`apps/web/src/lib/nodes.ts`, `apps/web/src/components/editor/forms.tsx`),
+and tests for each.
 
 **Exports must stay runnable.** Every template flow is exported to Python and executed by
 the test suite against the offline provider; the script's outputs must equal the engine's.
