@@ -145,11 +145,10 @@ async def test_secrets_are_resolved_but_never_recorded(
         headers=admin.headers,
     )
     run = (await start(client, admin, workspace, flow["id"], {"input": "x"}, wait=10)).json()
-    assert run["outputs"] == {"auth": "Bearer tok-live-123456"}
+    assert run["outputs"] == {"auth": "Bearer [secret:API_TOKEN]"}
     detail = await client.get(f"{base(workspace)}/runs/{run['id']}", headers=admin.headers)
-    steps = json.dumps(detail.json()["steps"])
-    assert "tok-live-123456" not in steps
-    assert "[secret:API_TOKEN]" in steps
+    assert "tok-live-123456" not in detail.text
+    assert "[secret:API_TOKEN]" in json.dumps(detail.json()["steps"])
 
 
 async def test_live_traces_stream_and_resume(client: httpx.AsyncClient, admin: Actor) -> None:

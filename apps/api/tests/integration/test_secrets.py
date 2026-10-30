@@ -72,7 +72,11 @@ async def test_flows_see_new_values_and_missing_names(
     )
     flow = await create_flow(client, admin, workspace)
     graph = flow["graph"]
-    graph["nodes"][1]["config"]["fields"] = [{"name": "said", "value": "{{secrets.GREETING}}"}]
+    # Outputs mask secret values, so the flow returns a value derived from the secret.
+    graph["nodes"][1]["config"]["fields"] = [
+        {"name": "said", "value": "{{secrets.GREETING | upper}}"},
+        {"name": "raw", "value": "{{secrets.GREETING}}"},
+    ]
     await client.put(
         f"{base(workspace)}/flows/{flow['id']}/draft",
         json={"graph": graph, "base_revision": 1},
@@ -87,15 +91,15 @@ async def test_flows_see_new_values_and_missing_names(
         )
         return dict(response.json())
 
-    assert (await run())["outputs"] == {"said": "hello"}
+    assert (await run())["outputs"] == {"said": "HELLO", "raw": "[secret:GREETING]"}
     await client.patch(
         f"{base(workspace)}/secrets/GREETING", json={"value": "bonjour"}, headers=admin.headers
     )
-    assert (await run())["outputs"] == {"said": "bonjour"}
+    assert (await run())["outputs"] == {"said": "BONJOUR", "raw": "[secret:GREETING]"}
     assert (
         await client.delete(f"{base(workspace)}/secrets/GREETING", headers=admin.headers)
     ).status_code == 204
     checked = (
         await client.get(f"{base(workspace)}/flows/{flow['id']}", headers=admin.headers)
     ).json()
-    assert [issue["code"] for issue in checked["issues"]] == ["unknown_secret"]
+    assert {issue["code"] for issue in checked["issues"]} == {"unknown_secret"}

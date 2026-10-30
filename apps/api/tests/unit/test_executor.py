@@ -470,12 +470,44 @@ async def test_secrets_are_used_but_never_recorded() -> None:
         secrets={"CRM_TOKEN": "s3cr3t-value"},
     )
     assert http.sent[0]["headers"]["Authorization"] == "Bearer s3cr3t-value"
-    assert result.outputs == {"v": "Bearer s3cr3t-value"}
+    assert result.outputs == {"v": "Bearer [secret:CRM_TOKEN]"}
     recorded = json.dumps(
         [s.input for s in recorder.started] + [s.output for s in recorder.finished]
     )
     assert "s3cr3t-value" not in recorded
     assert "[secret:CRM_TOKEN]" in recorded
+
+
+async def test_a_failure_that_echoes_a_secret_is_masked() -> None:
+    http = FakeHttp(
+        lambda spec: HttpResponse(
+            401,
+            json.dumps({"detail": f"bad token {spec['headers']['Authorization']}"}),
+            "application/json",
+        )
+    )
+    nodes = [
+        start(),
+        node(
+            "fetch",
+            "http",
+            url="https://crm.example.com",
+            headers=[{"key": "Authorization", "value": "Bearer {{secrets.CRM_TOKEN}}"}],
+        ),
+        output(v="{{fetch.status}}"),
+    ]
+    result, recorder = await run(
+        nodes,
+        [edge("start", "fetch"), edge("fetch", "result")],
+        http=http,
+        secrets={"CRM_TOKEN": "s3cr3t-value"},
+    )
+    assert result.status == "failed"
+    assert result.error is not None
+    assert result.error["code"] == "http_status"
+    everything = json.dumps([result.error, [s.error for s in recorder.finished]])
+    assert "s3cr3t-value" not in everything
+    assert "bad token Bearer [secret:CRM_TOKEN]" in everything
 
 
 def test_oversized_payloads_are_truncated() -> None:

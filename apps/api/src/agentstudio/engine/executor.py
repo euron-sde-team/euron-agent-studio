@@ -223,7 +223,10 @@ class Executor:
         try:
             result = main.result()
         except RunFailedError as exc:
-            return ExecutionResult("failed", error={**exc.error.as_dict(), "node_id": exc.node_id})
+            # The run's error and outputs are stored on the run and returned to callers,
+            # so they follow the rule for every recorded value: secrets never come back out.
+            error = {**exc.error.as_dict(), "node_id": exc.node_id}
+            return ExecutionResult("failed", error=self._mask(error))
         if result.waiting:
             return ExecutionResult("waiting", waiting_on=result.waiting)
         outputs: dict[str, Any] = {}
@@ -232,7 +235,7 @@ class Executor:
                 result.outputs.get(node_id), dict
             ):
                 outputs.update(result.outputs[node_id])
-        return ExecutionResult("succeeded", outputs=outputs)
+        return ExecutionResult("succeeded", outputs=self._mask(outputs))
 
     async def _stop(self, *tasks: asyncio.Task[Any]) -> None:
         for task in tasks:
