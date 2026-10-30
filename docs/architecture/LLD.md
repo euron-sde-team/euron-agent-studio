@@ -376,8 +376,14 @@ app, or `Authorization: Bearer` with a session token or a workspace API key
 `Referer`) of the web app.
 
 Rate limits (fixed windows in Redis): sign-in 10 per minute per client IP (and an account
-locks for a while after repeated wrong passwords), run starts 60 per minute per principal, webhook deliveries 120 per minute per hook, offline completions 600
-per minute, knowledge uploads 60 per minute.
+locks for 15 minutes after eight wrong passwords in a row), run starts 60 per minute per
+principal, webhook deliveries 120 per minute per hook, offline completions 600 per minute,
+knowledge uploads 60 per minute.
+
+Database sessions: each request gets one `AsyncSession` (`api/deps.py`), closed when the
+route function returns rather than when the response has been sent, so a server-sent event
+stream that stays open for minutes holds no pooled connection. Services commit their own
+transactions; routes never do.
 
 ## 11. Configuration
 
