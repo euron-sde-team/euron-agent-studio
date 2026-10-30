@@ -1,0 +1,173 @@
+# Security
+
+How AgentStudio protects what matters in an agent workflow tool: the credentials flows use,
+the systems flows can reach, the data that passes through model calls, and the integrity of
+what runs. The STRIDE analysis with residual risks is in [threat-model.md](threat-model.md);
+decisions are in the [ADRs](adr/README.md). To report a vulnerability, see
+[SECURITY.md](../../SECURITY.md).
+
+## Principles
+
+1. **No code execution.** Builders configure nodes; they never write code that a worker
+   runs. Templates are paths and a fixed set of filters, conditions use a closed list of
+   operators (regular expressions through RE2, linear time), arithmetic goes through an AST
+   evaluator with limits, and data reshaping is JMESPath.
+2. **Secrets are write-only.** Stored encrypted, decrypted only for the run that needs them,
+   never returned by the API, masked in everything a run records.
+3. **Flows reach only what the deployment allows.** HTTP request steps cannot reach private
+   networks or cloud metadata unless an operator lists a host.
+4. **Every tenant query is scoped.** The workspace is resolved and the role checked before a
+   route runs, and every repository call filters by workspace
+   ([ADR 0009](adr/0009-workspaces-as-the-tenant-boundary.md)).
+5. **Production refuses unsafe configuration** at boot (`Settings.production_problems`).
+
+## Identity and sessions
+
+| Control | Detail |
+| --- | --- |
+| Passwords | Argon2id (64 MiB, time cost 3, parallelism 2); at least 10 characters; unknown emails are verified against a dummy hash so timing does not reveal which accounts exist |
+| Sessions | HS256 JWT (issuer and audience checked) in an `httpOnly`, `SameSite=Lax` cookie (`agentstudio_session`), `Secure` in production, 7 days by default (`SESSION_TTL_HOURS`); the same token works as a bearer token |
+| Sign out | The token id goes on a Redis denylist until it expires; a password change bumps the user's session version, which invalidates every other token at once |
+| CSRF | Unsafe methods with a cookie session must carry an `Origin` (or `Referer`) from `CORS_ORIGINS` or `WEB_URL`; anything else is refused with `csrf` |
+| CORS | Explicit origins only, with credentials; production refuses `*` |
+| API keys | `agst_<prefix>_<secret>`: only an HMAC-SHA256 of the secret, keyed with `API_KEY_PEPPER`, is stored; shown once; role `viewer` or `editor` in one workspace; optional expiry; revocable; last use recorded at most once a minute |
+| Sign-in throttling | 10 attempts a minute per client IP (`RATE_LIMIT_LOGIN`), counted in Valkey so every API replica shares the budget. Behind a load balancer uvicorn trusts `X-Forwarded-For` only from `FORWARDED_ALLOW_IPS` (the VPC range on AWS), so a client cannot spoof its address to escape the limit |
+| Account lockout | Eight wrong passwords in a row lock the account for 15 minutes; a successful sign-in resets the count |
+| Sign-up | Only the first account (which becomes the instance administrator) unless `ALLOW_SIGNUP=true`; owners add members, and a new account gets a generated temporary password shown to the owner once |
+
+Production refuses to start when `SESSION_SECRET` or `API_KEY_PEPPER` is the development
+default, shorter than 32 characters, or equal to the other.
+
+## Authorization
+
+| Role | Can |
+| --- | --- |
+| owner | Everything below, plus members, workspace settings, secrets (write), API keys and the activity log |
+| editor | Create, edit, publish, import, duplicate and delete flows; start, cancel and re-run runs; decide approvals; manage knowledge bases; enable webhooks; see secret names |
+| viewer | Read flows, versions, runs, traces, approvals, knowledge and the dashboard; search knowledge; export flows |
+
+API keys act as `editor` or `viewer` in exactly one workspace. The route dependency
+resolves the workspace from the path and the principal's membership (or the API key's
+workspace) and answers `404` to everyone else, so workspace ids and slugs cannot be probed.
+An integration test sweeps every workspace route with an outsider's session and with
+another workspace's key.
+
+## Secrets
+
+- Encrypted with AES-256-GCM under `ENCRYPTION_KEY` with a random 96-bit nonce per value.
+  The associated data binds each ciphertext to its row (`secret:<workspace id>:<name>`), so
+  a ciphertext copied to another row or workspace fails to decrypt instead of leaking.
+  Webhook signing secrets are sealed the same way, bound to their flow.
+- The API returns names, descriptions and timestamps only. Replacing a value is
+  write-only; editors can see names (to reference them), owners can write.
+- A run resolves only the secrets its flow references. Before anything is recorded (step
+  inputs, outputs, errors, events, the live trace) every resolved value is replaced with
+  `[secret:NAME]`. An integration test asserts the raw value never appears in a run's steps.
+- On AWS, `ENCRYPTION_KEY`, `SESSION_SECRET` and `API_KEY_PEPPER` are generated by
+  Terraform into Secrets Manager (encrypted with the deployment's KMS key) and injected into
+  the tasks by ECS; they never appear in a task definition or a plan output.
+
+## Webhook ingress
+
+- `POST /api/v1/hooks/{hook_id}`: the hook id is 24 random URL-safe characters, and the
+  signature is the actual authentication.
+- `X-AgentStudio-Signature: t=<unix seconds>,v1=<hex HMAC-SHA256 of "<t>.<raw body>">`,
+  compared in constant time. Deliveries older than five minutes are refused
+  (`WEBHOOK_TOLERANCE_S`), and a signature seen once is refused for twice that window, so a
+  captured request cannot be replayed.
+- Unknown, disabled and secretless hooks all answer the same `404`. Bodies are capped at
+  256 KB and deliveries at 120 a minute per hook.
+- A webhook always runs the published version, so an unreviewed draft is never exposed.
+
+## Outbound network guard (HTTP request steps)
+
+URLs are templates filled from run inputs, so the destination of a request is untrusted.
+`integrations/http.py` resolves every host itself and refuses loopback, private (RFC 1918
+and unique local), link-local, shared (CGNAT), multicast, reserved and unspecified
+addresses, which covers cloud metadata endpoints, unless the host is in
+`HTTP_ALLOWED_HOSTS`. The check runs at connect time on the address actually dialled, so
+redirects (at most three) and DNS rebinding are covered. Only `http` and `https` URLs are
+accepted, TLS verifies the certificate against the original host, and responses are capped
+at `HTTP_MAX_RESPONSE_KB`. `HTTP_ALLOW_PRIVATE_NETWORKS` exists for local experiments and
+production refuses it. The sandbox host `sandbox.agentstudio.test` is answered in process
+and never touches the network.
+
+## Model calls and agents
+
+- **What leaves the deployment.** With the built-in offline model, nothing does. With a
+  hosted provider (`OPENAI_BASE_URL`, `OLLAMA_URL`), the rendered prompt of each model step
+  is sent to it: the run inputs and upstream outputs it references, never secrets unless a
+  builder deliberately puts `{{secrets.NAME}}` into a prompt. Provider keys are environment
+  configuration (Secrets Manager on AWS), never workspace data.
+- **Agents act only through the tools wired to them.** A tool call is limited to the HTTP,
+  knowledge, calculator or transform node the builder attached, with the arguments the node
+  declares; the HTTP tool still goes through the network guard. `MAX_AGENT_ITERATIONS` bounds
+  the loop, and the run's timeout bounds its time.
+- **Prompt injection** (a ticket or document telling the model to do something else) cannot
+  grant access the flow does not already have: there is no code tool, no tool can reach
+  private networks, and a Human approval step can sit in front of any action that matters
+  (the support and invoice templates do exactly that).
+
+## Engine integrity
+
+- Graphs are validated before they run: shape, limits (200 nodes, 400 edges, 512 KB), a DAG,
+  reachable steps, references to existing upstream nodes, knowledge bases and secrets.
+- Runs are bounded: `RUN_TIMEOUT_S`, per-step timeouts and retries, `MAX_LOOP_ITEMS`,
+  `MAX_PARALLEL_STEPS`, `MAX_ACTIVE_RUNS_PER_WORKSPACE`, 256 KB per recorded payload.
+- Claims are conditional updates, so a duplicated or replayed queue message never runs a
+  flow twice; a run that keeps losing its worker is failed after five claims.
+
+## The Python exporter
+
+Exported scripts are generated code that people run on their own machines, so the exporter
+never interpolates user text into code: every string (names, prompts, URLs, labels) is a
+Python literal produced by `repr()`, comments are reduced to one sanitised line, and
+identifiers come from validated node ids. A unit test exports a flow whose every field is a
+hostile string (quotes, triple quotes, newlines, `os.system` calls) and checks the parsed
+script contains no call it did not generate.
+
+## Infrastructure (AWS)
+
+| Control | Detail |
+| --- | --- |
+| Network | Tasks, the database and the cache in private subnets; only the load balancer is public; port 80 only redirects to HTTPS; TLS 1.2+ policy; optional WAF (managed rules, known bad inputs, per-IP rate limit) |
+| Encryption at rest | One customer-managed KMS key with annual rotation for S3, SQS, RDS, ElastiCache, Secrets Manager and CloudWatch Logs; task roles use it only through those services (`kms:ViaService`) |
+| Database | RDS with a password RDS manages and rotates in Secrets Manager; the app reads it per connection, so rotation needs no redeploy; `rds.force_ssl`; no public access |
+| Cache | ElastiCache Valkey with TLS in transit and an auth token kept in Secrets Manager |
+| Storage | Knowledge bucket: public access blocked, bucket-owner-enforced, TLS-only policy, versioning, SSE-KMS |
+| Least privilege | Separate execution and task roles per service; the runtime policy grants only the database secret, the knowledge bucket's `workspaces/` prefix, the run queues and KMS through those services |
+| Containers | Non-root users, read-only root filesystems with a writable `/tmp`, no public IPs, immutable image tags scanned on push |
+| Audit | VPC flow logs; the application's own activity log per workspace |
+
+`make tf-security` runs checkov over every module and environment; every skip is inline
+with its reason.
+
+## Operator checklist
+
+- [ ] Run with `APP_ENV=production`, so the API refuses to start with any of the unsafe
+      settings above (development secrets, `*` origins, plain-HTTP cookies, local storage or
+      queue, an emulator endpoint, private networks open to flows).
+- [ ] Generate `SESSION_SECRET` and `API_KEY_PEPPER` as two different random values of at
+      least 32 characters, and `ENCRYPTION_KEY` as 32 random bytes in base64 (Terraform does
+      all three on AWS).
+- [ ] Back up `ENCRYPTION_KEY`. Losing it makes stored secrets and webhook signing secrets
+      unreadable; the only recovery is re-entering every secret and rotating every webhook.
+- [ ] Rotate one key at a time: a new `SESSION_SECRET` signs everyone out, a new
+      `API_KEY_PEPPER` invalidates every API key
+      ([operations guide](../guides/operations.md)).
+- [ ] Serve the web app and the API over HTTPS with `COOKIE_SECURE=true` and `CORS_ORIGINS`
+      set to the web origin only.
+- [ ] Set `FORWARDED_ALLOW_IPS` to the load balancer's range only, so sign-in throttling
+      sees real client addresses.
+- [ ] Keep `ALLOW_SIGNUP=false` and add people as workspace members.
+- [ ] Keep `HTTP_ALLOWED_HOSTS` short and specific, and never set
+      `HTTP_ALLOW_PRIVATE_NETWORKS` outside a laptop.
+- [ ] Prefer `viewer` API keys, give keys an expiry, and revoke the ones the API keys page
+      shows as unused.
+- [ ] Put a Human approval step in front of any HTTP request that changes something
+      outside AgentStudio.
+- [ ] Send prompts only to a model provider you trust with the data your flows handle.
+- [ ] Keep the WAF on (`enable_waf`, on by default in `aws-prod`) and review the activity
+      log and the dead-letter alarm.
+- [ ] Never run `make demo` against a real deployment (the seed refuses
+      `APP_ENV=production`, and its demo passwords are public).
