@@ -1,12 +1,17 @@
 import asyncio
 import copy
 import json
+import socket
+import threading
 import uuid
 from typing import Any
 
 import httpx
+import uvicorn
 from fastapi import FastAPI
 
+from agentstudio.core.config import Settings
+from agentstudio.main import create_app
 from tests.integration.conftest import (
     Actor,
     add_member,
@@ -185,6 +190,61 @@ async def test_live_traces_stream_and_resume(client: httpx.AsyncClient, admin: A
                 if line == "event: run.finished":
                     break
     assert resumed == kinds[3:]
+
+
+async def test_open_trace_streams_hold_no_database_connection(
+    settings: Settings, client: httpx.AsyncClient, admin: Actor
+) -> None:
+    """A trace can stay open for minutes; it must not pin one of the API's pooled connections."""
+    workspace = await new_workspace(client, admin)
+    flow = await create_flow(client, admin, workspace, template="support-triage")
+    sample = (await client.get("/api/v1/templates/support-triage", headers=admin.headers)).json()
+    run = (
+        await client.post(
+            f"{base(workspace)}/flows/{flow['id']}/runs?wait=30",
+            json={"inputs": sample["sample"]},
+            headers=admin.headers,
+        )
+    ).json()
+    assert run["status"] == "waiting"  # its trace stays open until someone decides
+
+    # An API with a single pooled connection: one stream holding it would block every request.
+    narrow = settings.model_copy(update={"database_pool_size": 1, "database_max_overflow": 0})
+    port = _free_port()
+    server = uvicorn.Server(uvicorn.Config(create_app(narrow), port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        for _ in range(600):
+            if server.started:
+                break
+            await asyncio.sleep(0.05)
+        assert server.started, "the API did not start"
+        url = f"http://127.0.0.1:{port}{base(workspace)}/runs/{run['id']}"
+        async with (
+            httpx.AsyncClient(timeout=10) as http,
+            http.stream("GET", f"{url}/events", headers=admin.headers) as stream,
+        ):
+            # Keep a reference to the line iterator: an abandoned one is finalized, which closes
+            # the stream, and this test needs it to stay open.
+            lines = stream.aiter_lines()
+            async for line in lines:
+                if line == "event: run.waiting":
+                    break
+            # The stream is still open; the pool's only connection must be free.
+            detail = await http.get(url, headers=admin.headers, timeout=5)
+            assert detail.status_code == 200
+            assert detail.json()["status"] == "waiting"
+            await lines.aclose()
+    finally:
+        server.should_exit = True
+        thread.join(timeout=15)
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 async def test_traces_of_old_runs_are_replayed_from_postgres(

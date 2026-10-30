@@ -42,7 +42,9 @@ async def get_session(container: ContainerDep) -> AsyncIterator[AsyncSession]:
         yield session
 
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+# Closed when the route function returns, not when the response has been sent: a live trace
+# streams for minutes, and must not hold a pooled connection while it does.
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 def _origin_allowed(request: Request, settings: Settings) -> bool:
