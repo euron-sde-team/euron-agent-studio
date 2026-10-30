@@ -33,7 +33,7 @@ decisions are in the [ADRs](adr/README.md). To report a vulnerability, see
 | API keys | `agst_<prefix>_<secret>`: only an HMAC-SHA256 of the secret, keyed with `API_KEY_PEPPER`, is stored; shown once; role `viewer` or `editor` in one workspace; optional expiry; revocable; last use recorded at most once a minute |
 | Sign-in throttling | 10 attempts a minute per client IP (`RATE_LIMIT_LOGIN`), counted in Valkey so every API replica shares the budget. Behind a load balancer uvicorn trusts `X-Forwarded-For` only from `FORWARDED_ALLOW_IPS` (the VPC range on AWS), so a client cannot spoof its address to escape the limit |
 | Account lockout | Eight wrong passwords in a row lock the account for 15 minutes; a successful sign-in resets the count |
-| Sign-up | Only the first account (which becomes the instance administrator) unless `ALLOW_SIGNUP=true`; owners add members, and a new account gets a generated temporary password shown to the owner once |
+| Sign-up | Self-service sign-up is open only for the first account unless `ALLOW_SIGNUP=true`; owners add members, and a new account gets a generated temporary password shown to the owner once; operators can also create accounts with `agentstudio user create` |
 
 Production refuses to start when `SESSION_SECRET` or `API_KEY_PEPPER` is the development
 default, shorter than 32 characters, or equal to the other.
@@ -130,7 +130,7 @@ script contains no call it did not generate.
 
 | Control | Detail |
 | --- | --- |
-| Network | Tasks, the database and the cache in private subnets; only the load balancer is public; port 80 only redirects to HTTPS; TLS 1.2+ policy; optional WAF (managed rules, known bad inputs, per-IP rate limit) |
+| Network | Tasks, the database and the cache in private subnets; only the load balancer is public; port 80 only redirects to HTTPS; TLS 1.2+ policy; `/metrics` is answered with 404 at the load balancer and scraped from inside the VPC; optional WAF (managed rules, known bad inputs, per-IP rate limit) |
 | Encryption at rest | One customer-managed KMS key with annual rotation for S3, SQS, RDS, ElastiCache, Secrets Manager and CloudWatch Logs; task roles use it only through those services (`kms:ViaService`) |
 | Database | RDS with a password RDS manages and rotates in Secrets Manager; the app reads it per connection, so rotation needs no redeploy; `rds.force_ssl`; no public access |
 | Cache | ElastiCache Valkey with TLS in transit and an auth token kept in Secrets Manager |
