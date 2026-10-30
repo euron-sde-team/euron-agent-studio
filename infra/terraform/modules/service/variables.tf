@@ -88,6 +88,16 @@ variable "host_headers" {
   default     = []
 }
 
+variable "internal_paths" {
+  description = "Path patterns the load balancer answers with 404 instead of forwarding (for example /metrics), so they are reachable only from inside the VPC."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = length(var.internal_paths) <= 5
+    error_message = "A listener rule condition takes at most five path patterns."
+  }
+}
+
 variable "health_check_path" {
   description = "Load balancer health check path."
   type        = string

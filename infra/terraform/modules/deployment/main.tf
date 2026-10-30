@@ -221,6 +221,7 @@ module "api" {
   lb_security_group_id     = module.edge.security_group_id
   listener_priority        = 100
   host_headers             = [local.hostnames.api]
+  internal_paths           = ["/metrics", "/metrics/*"]
   health_check_path        = "/livez"
   extra_egress_ports       = var.http_egress_ports
   connect_to_database      = true

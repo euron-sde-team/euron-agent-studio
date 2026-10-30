@@ -145,6 +145,32 @@ resource "aws_lb_listener_rule" "host" {
   }
 }
 
+# Evaluated just before the host rule: internal endpoints such as Prometheus metrics stay
+# off the internet and are scraped from inside the VPC instead.
+resource "aws_lb_listener_rule" "internal" {
+  count        = local.with_lb && length(var.internal_paths) > 0 ? 1 : 0
+  listener_arn = var.listener_arn
+  priority     = var.listener_priority - 1
+  action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Not found"
+      status_code  = "404"
+    }
+  }
+  condition {
+    host_header {
+      values = var.host_headers
+    }
+  }
+  condition {
+    path_pattern {
+      values = var.internal_paths
+    }
+  }
+}
+
 # --- IAM ---------------------------------------------------------------------
 
 data "aws_iam_policy_document" "assume" {
