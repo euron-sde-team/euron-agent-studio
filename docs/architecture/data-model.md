@@ -223,8 +223,9 @@ A step is `running` while it executes, `waiting` while its approval is pending, 
 ## Queue messages
 
 SQS body: `{"run_id": "<uuid>", "workspace_id": "<uuid>"}`. The run row is the truth; the
-message only says "look at this run". A malformed message is deleted and logged. After three
-receives SQS moves a message to the dead-letter queue.
+message only says "look at this run". A malformed message is deleted and logged. After ten
+receives (`max_receive_count` in `infra/terraform/modules/queues`) SQS moves a message to
+the dead-letter queue, and an alarm fires.
 
 ## Object storage keys
 
