@@ -127,8 +127,10 @@ make tf-fmt tf-validate tf-lint tf-security
 
 ## Continuous integration
 
-`.github/workflows/checks.yml` runs on every push and pull request: lint, type checks, the
-unit suites, the integration suite against service containers, Terraform format and
-validation, and the sanitisation scan. The heavier workflows in `.github/workflows-full/`
-(the full stack with end-to-end tests and the QA crawl, image builds, tflint and checkov)
-are opt-in: copy them into `.github/workflows/` to enable them.
+`.github/workflows/checks.yml` runs on every push and pull request: ruff, mypy and the API
+unit tests; ESLint, Prettier, tsc and the web unit tests; Terraform formatting and
+validation for every environment; and the sanitization scan. The heavier workflows in
+`.github/workflows-full/` are opt-in (move them into `.github/workflows/` to enable them):
+the integration suite on PostgreSQL, Valkey and Floci with the web build and the OpenAPI
+check, gitleaks, CodeQL and dependency audits, tflint and checkov, multi-architecture image
+builds, and the full stack on Floci with the end-to-end suite and the QA crawl.
