@@ -1,0 +1,50 @@
+name: e2e
+
+# The full stack on the Floci AWS emulator: Terraform provisions SQS, S3, KMS and Secrets
+# Manager, the demo seed runs real flows on the offline model, then Playwright drives the
+# web app in Chromium and the QA crawl checks every page at desktop and mobile widths.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e-floci:
+    name: end-to-end on Floci
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - uses: docker/setup-buildx-action@v3
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @agentstudio/e2e exec playwright install --with-deps chromium
+      - name: Stack up and demo data
+        run: make up demo
+      - name: Browser tests
+        run: make e2e
+      - name: QA crawl (desktop and mobile, axe)
+        run: make qa
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -p agentstudio logs --tail 200

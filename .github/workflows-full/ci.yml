@@ -1,0 +1,60 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: "lint, typecheck, unit tests, build"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: uv --directory apps/api sync --frozen
+      - run: pnpm install --frozen-lockfile
+      - run: make lint
+      - run: make typecheck
+      - run: make test
+      - run: pnpm build
+      - name: The OpenAPI document matches the routes
+        run: |
+          make openapi
+          git diff --exit-code docs/api/openapi.json
+      - name: Sanitization scan
+        run: scripts/check-sanitization.sh
+
+  integration:
+    name: "integration tests (PostgreSQL, Valkey, Floci)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: apps/api/uv.lock
+      - run: uv --directory apps/api sync --frozen
+      # Starts the three services from deploy/compose/compose.test.yaml on ports 9121 to
+      # 9123, exactly as on a laptop.
+      - run: make test-integration
+      - name: Service logs on failure
+        if: failure()
+        run: docker compose -p agentstudio-test logs --tail 200
