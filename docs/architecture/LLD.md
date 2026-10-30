@@ -305,7 +305,9 @@ The same provider is served over HTTP as an OpenAI-compatible endpoint
 ### 7.2 Response cache
 
 Model nodes with `settings.cache_ttl_s > 0` and temperature 0 cache responses in Redis
-under a hash of the provider, model, messages, tools and response format. A hit is
+under a hash of the workspace, provider, model, messages, tools and response format. The
+workspace is part of the key (runs reach the registry through `WorkspaceModels`), so one
+tenant's cache never answers, or confirms, another tenant's identical prompt. A hit is
 recorded on the step (`cached: true`) and costs nothing.
 
 ## 8. Tools
