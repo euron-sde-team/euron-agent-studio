@@ -7,7 +7,7 @@ browser suites run against the real stack seeded by `make demo`.
 | --- | --- | --- | --- |
 | API unit | `make test` (with the web unit tests) | 216 | Nothing: pure modules, fakes for the ports |
 | API integration | `make test-integration` | 72 | Real PostgreSQL 16, Valkey 8 and Floci (S3, SQS) on ports 9121 to 9123 |
-| Web unit | `make test` | 36 | The web app's pure logic (`apps/web/src/lib`), in Node |
+| Web unit | `make test` | 39 | The web app's pure logic (`apps/web/src/lib`), in Node |
 | End to end | `make e2e` | 22 | The running stack in Chromium |
 | QA crawl | `make qa` | 4 | Every page, desktop and mobile, with axe |
 
@@ -75,7 +75,7 @@ pnpm --filter @agentstudio/web test -- graph   # files matching "graph"
 
 Vitest covers the editor's pure logic: the node catalog, graph conversion and connection
 rules, auto-layout, undo history, reference suggestions, the trace reducer, run timelines,
-trigger descriptions and formatting.
+trigger descriptions, Python literals for code snippets, and formatting.
 
 ## End-to-end tests
 
