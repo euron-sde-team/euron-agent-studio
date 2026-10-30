@@ -1,4 +1,5 @@
 import json
+import uuid
 from decimal import Decimal
 from typing import Any
 
@@ -11,7 +12,7 @@ from agentstudio.providers.base import ChatRequest, ChatResponse, ProviderError
 from agentstudio.providers.ollama import OllamaProvider
 from agentstudio.providers.openai_compat import OpenAICompatibleProvider
 from agentstudio.providers.pricing import cost, parse_prices
-from agentstudio.providers.registry import ModelRegistry, split_ref
+from agentstudio.providers.registry import ModelRegistry, WorkspaceModels, split_ref
 
 TOOLS = [
     {
@@ -234,6 +235,21 @@ async def test_registry_prices_caches_and_refuses_unknown_models() -> None:
     with pytest.raises(ProviderError) as error:
         await registry.complete("openai:gpt-4o", request)
     assert error.value.code == "model_unavailable"
+
+
+async def test_cached_answers_stay_inside_their_workspace() -> None:
+    fake = Counting()
+    registry = ModelRegistry(Settings(), fakeredis.FakeAsyncRedis(), providers={"fake": fake})
+    request = ChatRequest(model="", messages=[{"role": "user", "content": "hi"}], temperature=0)
+    north, south = uuid.uuid4(), uuid.uuid4()
+    first = await WorkspaceModels(registry, north).complete("fake:m1", request, cache_ttl_s=60)
+    again = await WorkspaceModels(registry, north).complete("fake:m1", request, cache_ttl_s=60)
+    other = await WorkspaceModels(registry, south).complete("fake:m1", request, cache_ttl_s=60)
+    assert again.cached
+    assert again.response.content == first.response.content
+    assert not other.cached
+    assert other.response.content == "answer 2"
+    assert fake.calls == 2
 
 
 async def test_offline_calls_carry_a_simulated_cost() -> None:

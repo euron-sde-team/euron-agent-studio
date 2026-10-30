@@ -12,6 +12,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import time
+import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
@@ -142,9 +143,12 @@ class ModelRegistry:
         return provider_name, model, provider
 
     @staticmethod
-    def cache_key(provider: str, request: ChatRequest) -> str:
+    def cache_key(provider: str, request: ChatRequest, scope: str = "") -> str:
         material = orjson.dumps(
             {
+                # The scope (a workspace) keeps one tenant's cached answer from serving, or
+                # confirming, another tenant's identical prompt.
+                "scope": scope,
                 "provider": provider,
                 "model": request.model,
                 "messages": request.messages,
@@ -180,11 +184,11 @@ class ModelRegistry:
             log.warning("model_cache_unavailable", exc_info=True)
 
     async def complete(
-        self, model_ref: str, request: ChatRequest, *, cache_ttl_s: int = 0
+        self, model_ref: str, request: ChatRequest, *, cache_ttl_s: int = 0, cache_scope: str = ""
     ) -> ModelResult:
         provider_name, model, provider = self._resolve(model_ref)
         resolved = dataclasses.replace(request, model=model)
-        key = self.cache_key(provider_name, resolved) if cache_ttl_s > 0 else None
+        key = self.cache_key(provider_name, resolved, cache_scope) if cache_ttl_s > 0 else None
         if key is not None and (hit := await self._cached(key)) is not None:
             metrics.MODEL_CALLS.labels(provider_name, "cached").inc()
             return ModelResult(
@@ -229,3 +233,18 @@ class ModelRegistry:
     async def aclose(self) -> None:
         for provider in self._providers.values():
             await provider.aclose()
+
+
+class WorkspaceModels:
+    """The engine's `ModelGateway` port for one workspace's runs: its own response cache."""
+
+    def __init__(self, registry: ModelRegistry, workspace_id: uuid.UUID) -> None:
+        self.registry = registry
+        self.scope = str(workspace_id)
+
+    async def complete(
+        self, model_ref: str, request: ChatRequest, *, cache_ttl_s: int = 0
+    ) -> ModelResult:
+        return await self.registry.complete(
+            model_ref, request, cache_ttl_s=cache_ttl_s, cache_scope=self.scope
+        )

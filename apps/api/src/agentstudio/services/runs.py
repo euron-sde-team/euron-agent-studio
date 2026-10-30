@@ -41,6 +41,7 @@ from agentstudio.engine.recorder import ApprovalRequest, ApprovalTicket, StepEnd
 from agentstudio.integrations.queue import RunJob
 from agentstudio.models import Approval, Run, RunStep, Workspace
 from agentstudio.models.enums import ApprovalStatus, RunStatus, RunTrigger, StepStatus
+from agentstudio.providers.registry import WorkspaceModels
 from agentstudio.repositories.approvals import ApprovalRepository
 from agentstudio.repositories.flows import FlowRepository
 from agentstudio.repositories.runs import RunRepository
@@ -501,7 +502,7 @@ class RunExecution:
                 )
             else:
                 services = EngineServices(
-                    models=self.c.models,
+                    models=WorkspaceModels(self.c.models, run.workspace_id),
                     knowledge=WorkspaceKnowledge(self.c, run.workspace_id),
                     http=self.c.http,
                     cancel=RedisCancel(self.c, run.id),
