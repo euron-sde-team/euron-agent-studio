@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="t d">
+  <title id="t">Euron AgentStudio architecture</title>
+  <desc id="d">Browsers, API clients and webhook senders reach the web app and the API through one load balancer. The API stores runs in PostgreSQL and queues their ids on SQS; workers execute them, call model providers and HTTP targets through a network guard, and stream traces through Valkey back to the browser.</desc>
+  <style>
+    .t { font-family: Inter, -apple-system, Segoe UI, Helvetica, Arial, sans-serif; }
+    .h { font-size: 17px; font-weight: 650; fill: #fff1e6; }
+    .s { font-size: 13px; fill: #c9b6a7; }
+    .x { font-size: 12px; fill: #9b8778; }
+    .lbl { font-size: 12px; font-weight: 600; fill: #fdba74; letter-spacing: 1.5px; }
+    .box { fill: #1d1611; stroke: #3b2c22; stroke-width: 1.2; }
+    .hot { fill: #24170e; stroke: #f97316; stroke-opacity: 0.7; stroke-width: 1.4; }
+    .aws { fill: #171a22; stroke: #343d52; stroke-width: 1.2; }
+    .zone { fill: none; stroke: #4a3628; stroke-dasharray: 5 6; stroke-width: 1.2; }
+    .arrow { stroke: #7a6252; stroke-width: 1.6; fill: none; marker-end: url(#a); }
+    .arrowhot { stroke: #f97316; stroke-width: 1.8; fill: none; marker-end: url(#ah); }
+    .bus { stroke: #7a6252; stroke-width: 1.6; fill: none; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#7a6252"/></marker>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#f97316"/></marker>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#fff" stroke-opacity="0.03"/></pattern>
+  </defs>
+  <rect width="1280" height="720" rx="16" fill="#140f0b"/>
+  <rect width="1280" height="720" rx="16" fill="url(#grid)"/>
+
+  <g class="t">
+    <text class="h" x="40" y="50" style="font-size: 21px">Euron AgentStudio</text>
+    <text class="s" x="40" y="74">A run: client, API, PostgreSQL and SQS, worker, models and tools, live trace back through Valkey</text>
+
+    <!-- Clients -->
+    <text class="lbl" x="40" y="116">CLIENTS</text>
+    <rect class="box" x="40" y="130" width="190" height="80" rx="12"/>
+    <text class="h" x="58" y="163">Builders, reviewers</text>
+    <text class="s" x="58" y="186">browser, app.&lt;domain&gt;</text>
+
+    <rect class="box" x="40" y="240" width="190" height="80" rx="12"/>
+    <text class="h" x="58" y="273">Integrators</text>
+    <text class="s" x="58" y="296">API keys, api.&lt;domain&gt;</text>
+
+    <rect class="box" x="40" y="350" width="190" height="80" rx="12"/>
+    <text class="h" x="58" y="383">Webhook senders</text>
+    <text class="s" x="58" y="406">HMAC-signed POST</text>
+
+    <!-- Edge -->
+    <text class="lbl" x="268" y="116">EDGE</text>
+    <rect class="aws" x="268" y="190" width="186" height="190" rx="12"/>
+    <text class="h" x="286" y="224">Load balancer</text>
+    <text class="s" x="286" y="250">TLS 1.2+, by host:</text>
+    <text class="s" x="286" y="270">app. to web</text>
+    <text class="s" x="286" y="290">api. to api</text>
+    <line x1="286" y1="308" x2="436" y2="308" stroke="#343d52"/>
+    <text class="s" x="286" y="332">WAF (aws-prod)</text>
+    <text class="s" x="286" y="354">/metrics: 404</text>
+
+    <!-- Application zone -->
+    <rect class="zone" x="486" y="100" width="488" height="352" rx="14"/>
+    <text class="lbl" x="504" y="124">ECS FARGATE, PRIVATE SUBNETS</text>
+
+    <rect class="box" x="505" y="140" width="450" height="64" rx="12"/>
+    <text class="h" x="523" y="168">web</text>
+    <text class="s" x="563" y="168">Next.js: canvas editor, runs, approvals,</text>
+    <text class="s" x="563" y="188">knowledge, templates, settings (/env.js config)</text>
+
+    <rect class="hot" x="505" y="232" width="140" height="196" rx="12"/>
+    <text class="h" x="523" y="262">api</text>
+    <text class="x" x="523" y="282">FastAPI</text>
+    <text class="s" x="523" y="308">REST /api/v1</text>
+    <text class="s" x="523" y="330">SSE traces</text>
+    <text class="s" x="523" y="352">webhooks</text>
+    <text class="s" x="523" y="374">offline model</text>
+    <text class="s" x="523" y="396">sandbox</text>
+
+    <rect class="aws" x="680" y="262" width="100" height="136" rx="12"/>
+    <text class="h" x="698" y="294">SQS</text>
+    <text class="s" x="698" y="318">run ids</text>
+    <text class="x" x="698" y="342">dead-letter</text>
+    <text class="x" x="698" y="360">queue after</text>
+    <text class="x" x="698" y="378">10 receives</text>
+
+    <rect class="hot" x="815" y="232" width="140" height="196" rx="12"/>
+    <text class="h" x="833" y="262">worker</text>
+    <text class="x" x="833" y="282">same image</text>
+    <text class="s" x="833" y="308">DAG executor</text>
+    <text class="s" x="833" y="330">agents, tools</text>
+    <text class="s" x="833" y="352">approvals</text>
+    <text class="s" x="833" y="374">heartbeats</text>
+    <text class="s" x="833" y="396">reaper</text>
+
+    <!-- External -->
+    <text class="lbl" x="1010" y="116">OUTSIDE</text>
+    <rect class="box" x="1010" y="140" width="230" height="130" rx="12"/>
+    <text class="h" x="1028" y="172">Model providers</text>
+    <text class="s" x="1028" y="198">offline (built in, default)</text>
+    <text class="s" x="1028" y="220">OpenAI-compatible</text>
+    <text class="s" x="1028" y="242">Ollama</text>
+
+    <rect class="box" x="1010" y="296" width="230" height="132" rx="12"/>
+    <text class="h" x="1028" y="328">HTTP targets</text>
+    <text class="s" x="1028" y="354">public APIs, through the</text>
+    <text class="s" x="1028" y="374">network guard</text>
+    <text class="x" x="1028" y="402">private and metadata</text>
+    <text class="x" x="1028" y="418">addresses refused</text>
+
+    <!-- Data plane -->
+    <text class="lbl" x="268" y="516">DATA</text>
+    <rect class="aws" x="268" y="532" width="214" height="112" rx="12"/>
+    <text class="h" x="286" y="564">PostgreSQL 16</text>
+    <text class="s" x="286" y="588">flows, versions, runs,</text>
+    <text class="s" x="286" y="608">steps, approvals, audit,</text>
+    <text class="s" x="286" y="628">knowledge (full text)</text>
+
+    <rect class="aws" x="500" y="532" width="214" height="112" rx="12"/>
+    <text class="h" x="518" y="564">Valkey</text>
+    <text class="s" x="518" y="588">live trace streams,</text>
+    <text class="s" x="518" y="608">cancel flags, rate</text>
+    <text class="s" x="518" y="628">limits, caches</text>
+
+    <rect class="aws" x="732" y="532" width="214" height="112" rx="12"/>
+    <text class="h" x="750" y="564">S3</text>
+    <text class="s" x="750" y="588">knowledge originals,</text>
+    <text class="s" x="750" y="608">private, versioned,</text>
+    <text class="s" x="750" y="628">SSE-KMS</text>
+
+    <rect class="aws" x="964" y="532" width="276" height="112" rx="12"/>
+    <text class="h" x="982" y="564">Secrets Manager, KMS</text>
+    <text class="s" x="982" y="588">app keys and the database</text>
+    <text class="s" x="982" y="608">password (rotated by RDS);</text>
+    <text class="s" x="982" y="628">one KMS key for data at rest</text>
+
+    <!-- Local note -->
+    <rect class="box" x="40" y="532" width="190" height="112" rx="12"/>
+    <text class="h" x="58" y="564">Locally</text>
+    <text class="s" x="58" y="588">Docker Compose; Floci</text>
+    <text class="s" x="58" y="608">emulates SQS, S3, KMS,</text>
+    <text class="s" x="58" y="628">Secrets Manager</text>
+
+    <text class="x" x="40" y="684">Browsers call the API directly (CORS allowlist, httpOnly session cookie). Every step is written to PostgreSQL and appended to the run's Valkey stream,</text>
+    <text class="x" x="40" y="702">which the API replays to the browser as server-sent events. Terraform builds the same modules on Floci and on AWS.</text>
+  </g>
+
+  <!-- Clients to the load balancer -->
+  <path class="arrow" d="M230 170 C 250 170, 250 228, 266 228"/>
+  <path class="arrow" d="M230 280 L 266 280"/>
+  <path class="arrow" d="M230 390 C 250 390, 250 342, 266 342"/>
+  <!-- Load balancer to web and api -->
+  <path class="arrow" d="M454 236 C 480 236, 480 172, 503 172"/>
+  <path class="arrowhot" d="M454 300 L 503 300"/>
+  <!-- api to SQS to worker -->
+  <path class="arrowhot" d="M645 330 L 678 330"/>
+  <path class="arrowhot" d="M780 330 L 813 330"/>
+  <!-- worker to the outside -->
+  <path class="arrow" d="M955 262 C 985 262, 985 205, 1008 205"/>
+  <path class="arrow" d="M955 380 C 985 380, 985 362, 1008 362"/>
+  <!-- Bus to the data plane -->
+  <path class="bus" d="M575 428 L 575 480"/>
+  <path class="bus" d="M885 428 L 885 480"/>
+  <path class="bus" d="M375 480 L 1102 480"/>
+  <path class="arrow" d="M375 480 L 375 530"/>
+  <path class="arrow" d="M607 480 L 607 530"/>
+  <path class="arrow" d="M839 480 L 839 530"/>
+  <path class="arrow" d="M1102 480 L 1102 530"/>
+</svg>
