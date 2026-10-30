@@ -1,0 +1,87 @@
+# -----------------------------------------------------------------------------
+# Overlay: emulated AWS with Floci (https://github.com/floci-io/floci, MIT).
+#
+# The SAME Terraform modules that provision real AWS (infra/terraform/modules) run here
+# against the emulator: the `terraform` one-shot applies infra/terraform/envs/local-floci
+# before the migrations, the API and the worker start. They then use AWS exactly as they
+# do in production (docs/architecture/adr/0004-floci-for-local-aws.md):
+#
+#   knowledge files   bucket agentstudio-local-knowledge, SSE-KMS (alias/agentstudio-local)
+#   run queue         agentstudio-local-runs, redriven to agentstudio-local-runs-dlq
+#   app secrets       agentstudio-local/app in Secrets Manager (exercised, not read locally)
+# -----------------------------------------------------------------------------
+x-floci-env: &floci-env
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: test
+  AWS_SECRET_ACCESS_KEY: test
+  AWS_ENDPOINT_URL: http://floci:4566
+  STORAGE_BACKEND: s3
+  S3_BUCKET: agentstudio-local-knowledge
+  S3_KMS_KEY_ID: alias/agentstudio-local
+  QUEUE_BACKEND: sqs
+  SQS_QUEUE_URL: http://floci:4566/000000000000/agentstudio-local-runs
+
+services:
+  floci:
+    image: floci/floci:2.3.0
+    environment:
+      FLOCI_HOSTNAME: floci
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_STORAGE_MODE: persistent
+      FLOCI_STORAGE_PERSISTENT_PATH: /data
+    ports:
+      - "127.0.0.1:${AGENTSTUDIO_FLOCI_PORT:-4612}:4566"
+    volumes:
+      - flocidata:/data
+    networks:
+      default:
+        # The S3 Control API (bucket tagging) addresses <account-id>.<endpoint>, so the
+        # emulated account's name has to resolve to the emulator as well.
+        aliases: ["000000000000.floci"]
+
+  # One-shot: provision the emulator with the production modules.
+  terraform:
+    image: hashicorp/terraform:1.16.6
+    working_dir: /infra/envs/local-floci
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "waiting for floci..."
+        until wget -q -O /dev/null http://floci:4566/; do sleep 1; done
+        mkdir -p /tfdata/state
+        terraform init -input=false -no-color >/dev/null
+        # State lives in the tfdata volume, so it shares the emulator's lifecycle
+        # (make down wipes both together).
+        terraform apply -input=false -auto-approve -no-color -state=/tfdata/state/local.tfstate -var endpoint=http://floci:4566
+    environment:
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      TF_IN_AUTOMATION: "1"
+      TF_DATA_DIR: /tfdata
+    volumes:
+      - ../../infra/terraform:/infra
+      - tfdata:/tfdata
+    depends_on:
+      - floci
+    restart: "no"
+
+  migrate:
+    environment:
+      <<: *floci-env
+    depends_on:
+      terraform:
+        condition: service_completed_successfully
+
+  api:
+    environment:
+      <<: *floci-env
+
+  worker:
+    environment:
+      <<: *floci-env
+
+volumes:
+  flocidata:
+  tfdata:
