@@ -3,10 +3,12 @@
 # Uncomment and set a real GitHub team (or users) to enable. GitHub reports an
 # error for teams that do not exist, so the rules ship commented out.
 #
-# *                                              @<org>/<maintainers-team>
-# /infra/                                        @<org>/<maintainers-team>
-# /apps/api/src/agentstudio/core/security.py     @<org>/<security-team>
-# /apps/api/src/agentstudio/core/crypto.py       @<org>/<security-team>
-# /apps/api/src/agentstudio/api/deps.py          @<org>/<security-team>
-# /apps/api/src/agentstudio/engine/tools/http.py @<org>/<security-team>
-# /apps/api/src/agentstudio/export/              @<org>/<security-team>
+# *                                                @<org>/<maintainers-team>
+# /infra/                                          @<org>/<maintainers-team>
+# /apps/api/src/agentstudio/core/security.py       @<org>/<security-team>
+# /apps/api/src/agentstudio/core/crypto.py         @<org>/<security-team>
+# /apps/api/src/agentstudio/api/deps.py            @<org>/<security-team>
+# /apps/api/src/agentstudio/integrations/http.py   @<org>/<security-team>
+# /apps/api/src/agentstudio/engine/runtime.py      @<org>/<security-team>
+# /apps/api/src/agentstudio/services/webhooks.py   @<org>/<security-team>
+# /apps/api/src/agentstudio/export/                @<org>/<security-team>
