@@ -397,7 +397,7 @@ function AgentTools({ node, graph, onSelectNode }: FormProps) {
   return (
     <FieldShell
       label="Tools"
-      hint="Wire a tool's As a tool output into this agent's Tools input to lend it."
+      hint={`Connect a tool node's "As a tool" handle to this agent's "Tools" handle.`}
     >
       {tools.length ? (
         <ul className="space-y-1.5">
