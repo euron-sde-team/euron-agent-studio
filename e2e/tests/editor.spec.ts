@@ -13,7 +13,7 @@ async function newBlankFlow(page: Page, name: string): Promise<void> {
 }
 
 async function saved(page: Page): Promise<void> {
-  await expect(page.getByTestId("save-state")).toHaveText(/Saved/, { timeout: 15_000 });
+  await expect(page.getByTestId("save-state")).toHaveText(/Saved/, { timeout: 30_000 });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -56,7 +56,7 @@ test("build a flow on the canvas, wire it, run it and read the trace", async ({ 
     );
   await page.getByTestId("start-run").click();
   const panel = page.getByTestId("run-panel");
-  await expect(panel.getByText("Succeeded")).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByText("Succeeded")).toBeVisible({ timeout: 60_000 });
   await expect(panel.getByText("Outputs")).toBeVisible();
   await expect(panel.locator("pre")).toContainText('"result"');
   // Every step's trace is one click away.

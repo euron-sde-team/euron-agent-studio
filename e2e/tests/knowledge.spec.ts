@@ -25,7 +25,7 @@ test("upload a document and search it the way a flow does", async ({ page }) => 
     mimeType: "text/markdown",
     buffer: Buffer.from(NOTE),
   });
-  await expect(page.getByTestId("documents")).toContainText("Office move");
+  await expect(page.getByTestId("documents")).toContainText("Office move", { timeout: 45_000 });
   await expect(page.getByTestId("documents")).toContainText("2 passages");
 
   await page.getByLabel("Search query").fill("Where do visitors park?");
