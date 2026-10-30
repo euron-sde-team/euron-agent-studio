@@ -31,6 +31,15 @@ import { fromStep, mergeSteps } from "@/lib/runs";
 import { nodeStatuses } from "@/lib/trace";
 import { isFinal, useRunStream } from "@/lib/use-run-stream";
 
+/** Why the cost is what it is: simulated offline pricing, cached answers, or real prices. */
+function costHint(simulated: boolean, cost: number, steps: { cached: boolean }[]): string {
+  const cached = steps.filter((s) => s.cached).length;
+  if (simulated) return "Simulated (offline model)";
+  if (cost === 0 && cached > 0) return `${cached} answer${cached === 1 ? "" : "s"} from cache`;
+  if (cost === 0) return "No model calls";
+  return "At configured prices";
+}
+
 function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
@@ -132,7 +141,7 @@ export default function RunPage() {
                 &middot;{" "}
                 <Link
                   href={`/w/${workspace}/runs/${data.rerun_of_id}`}
-                  className="text-primary hover:underline"
+                  className="text-primary underline underline-offset-2"
                 >
                   re-run of an earlier run
                 </Link>
@@ -212,7 +221,7 @@ export default function RunPage() {
           <Stat
             label="Cost"
             value={formatCost(cost)}
-            hint={data.cost_simulated ? "Simulated (offline model)" : "At configured prices"}
+            hint={costHint(data.cost_simulated, cost, steps)}
           />
         </CardContent>
       </Card>
