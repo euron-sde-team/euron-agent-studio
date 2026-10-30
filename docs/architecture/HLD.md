@@ -53,8 +53,8 @@ The *Support ticket triage* template, as drawn on the canvas:
 
 ```mermaid
 flowchart LR
-  start([Start: subject, body, customer_email]) --> classify[Prompt: classify ticket<br/>JSON: category, priority, sentiment]
-  classify --> crm[HTTP: look up customer<br/>in the CRM]
+  start([Start: subject, body, customer_email]) --> classify[Prompt: classify ticket<br/>JSON: category, priority, sentiment, summary]
+  start --> crm[HTTP: look up customer<br/>in the CRM]
   classify --> kb[Knowledge search:<br/>help center]
   crm --> draft[Prompt: draft reply]
   kb --> draft
@@ -65,9 +65,9 @@ flowchart LR
   approve -- rejected --> esc([Output: escalated])
 ```
 
-`crm` and `kb` run in parallel; `draft` waits for both. When the run reaches `approve` it
-pauses, an approval appears in the inbox, and the run continues on the branch the reviewer
-chooses.
+`classify` and `crm` run in parallel; `draft` waits for both branches. When the run
+reaches `approve` it pauses, an approval appears in the inbox, and the run continues on the
+branch the reviewer chooses.
 
 ### 1.4 Scope
 
