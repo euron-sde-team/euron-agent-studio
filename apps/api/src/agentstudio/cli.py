@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -46,25 +47,43 @@ def migrate() -> None:
 def create_user(
     email: Annotated[str, typer.Option(help="Sign-in email.")],
     name: Annotated[str, typer.Option(help="Display name.")],
-    password: Annotated[str, typer.Option(prompt=True, hide_input=True, confirmation_prompt=True)],
+    password: Annotated[
+        str | None,
+        typer.Option(
+            help="Leave out to be asked for one, or, with no terminal (an ECS one-off task), "
+            "to get a generated temporary password to change after signing in."
+        ),
+    ] = None,
     admin: Annotated[bool, typer.Option(help="Instance administrator.")] = False,
 ) -> None:
     """Create an account."""
     from agentstudio.db.session import Database
+    from agentstudio.services.auth import temporary_password
     from agentstudio.services.users import create_user as create
+
+    generated = False
+    if password is None:
+        if sys.stdin.isatty():
+            password = typer.prompt("Password", hide_input=True, confirmation_prompt=True)
+        else:
+            password, generated = temporary_password(), True
+    chosen = password
 
     async def run() -> None:
         db = Database(get_settings())
         try:
             async with db.session() as session:
                 user = await create(
-                    session, email=email, name=name, password=password, is_admin=admin
+                    session, email=email, name=name, password=chosen, is_admin=admin
                 )
                 typer.echo(f"created {user.email} ({user.id})")
         finally:
             await db.dispose()
 
     asyncio.run(run())
+    if generated:
+        typer.echo(f"temporary password: {chosen}")
+        typer.echo("Sign in and change it at once: account menu, Change password.")
 
 
 @demo_app.command("seed")
