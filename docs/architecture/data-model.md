@@ -102,13 +102,15 @@ Unique `(flow_id, version)` also serves the version list.
 | `rerun_of_id` | uuid | runs, set null |
 | `claims` | integer | how many times a worker has claimed it (first run plus resumes) |
 | `heartbeat_at` | timestamptz | refreshed every 15 seconds while running |
+| `enqueued_at` | timestamptz | when the run was last put on the queue (start, approval decision, hand-back, re-queue) |
 | `cancel_requested_at` | timestamptz | |
 | `created_at`, `started_at`, `finished_at` | timestamptz | `created_at` is the queue time |
 | `duration_ms` | integer | |
 
 Indexes: `(workspace_id, created_at)` for run history, `(flow_id, created_at)` for a flow's
-runs, `(workspace_id, status, created_at)` for status filters, and a partial index on
-`heartbeat_at WHERE status = 'running'` for the stale-run reaper.
+runs, `(workspace_id, status, created_at)` for status filters, and two small partial indexes
+for the reaper: `heartbeat_at WHERE status = 'running'` (runs whose worker vanished) and
+`enqueued_at WHERE status = 'queued'` (runs whose queue message was lost).
 
 **`run_steps`**
 
@@ -193,6 +195,7 @@ stateDiagram-v2
   running --> waiting: only approvals are left
   waiting --> queued: an approval is decided
   running --> queued: heartbeat lost (reaper)
+  queued --> queued: message lost, sent again (reaper)
   running --> succeeded
   running --> failed
   queued --> cancelled

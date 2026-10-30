@@ -342,6 +342,7 @@ models, overridable with `MODEL_PRICES`). See [ADR 0006](adr/0006-deterministic-
 | A worker is stopped (deploy) | SIGTERM stops receiving; in-flight runs get a grace period, then anything unfinished is handed back (status queued, message visible at once) and resumes elsewhere from its last finished step. |
 | A run keeps losing its worker | After five claims the reaper fails it with `worker_lost` instead of handing it out forever. |
 | Duplicate SQS delivery | The claim is a conditional update; the duplicate is deleted. |
+| A queue message is lost, or SQS is unreachable when a run starts | The run is already stored as `queued` (the row is the outbox), so the request still succeeds; the reaper sends any run still queued five minutes after its last send. |
 | Redis unavailable | Readiness fails; runs still execute and persist, live traces fall back to Postgres snapshots on reconnect. |
 | A run exceeds `RUN_TIMEOUT_S` | It fails with `run_timeout`. |
 | An approval is never decided | It expires after its node's limit (if set) and the run continues on the rejected branch. |

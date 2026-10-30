@@ -396,8 +396,10 @@ message when the run finishes or pauses, and on SIGTERM stops receiving and give
 runs `WORKER_SHUTDOWN_GRACE_S` to finish before handing the rest back (status queued,
 message visible at once). Every 30 seconds one worker (elected with a Redis lock)
 re-queues runs whose heartbeat is older than `STALE_RUN_S`, fails runs that lost their
-worker five times, and expires approvals past their deadline. With `QUEUE_BACKEND=inline`
-the API does all of this itself.
+worker five times, sends again any run still `queued` five minutes after it was last put on
+the queue (its message was lost, or the queue was unreachable when it started: the run row
+is the outbox, so a stored run is never failed for a send error), and expires approvals
+past their deadline. With `QUEUE_BACKEND=inline` the API does all of this itself.
 
 ## 13. The web app
 
