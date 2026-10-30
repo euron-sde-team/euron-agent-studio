@@ -157,7 +157,7 @@ locals {
   )
 }
 
-# What both the API (uploads, enqueueing runs, inline runs for ?wait) and the workers (every
+# What both the API (uploads, enqueueing runs, the readiness probe) and the workers (every
 # run) do at runtime: read the database password, read and write knowledge originals, and
 # send, receive and delete run messages.
 data "aws_iam_policy_document" "runtime" {
