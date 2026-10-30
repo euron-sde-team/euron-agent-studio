@@ -39,9 +39,9 @@ test("build a flow on the canvas, wire it, run it and read the trace", async ({ 
   await page.getByRole("button", { name: "Close settings" }).click();
   await page.locator(".react-flow__controls-fitview").click();
   await page.waitForTimeout(400);
-  await prompt.locator(".react-flow__handle-right").dragTo(
-    page.getByTestId("node-result").locator(".react-flow__handle-left"),
-  );
+  await prompt
+    .locator(".react-flow__handle-right")
+    .dragTo(page.getByTestId("node-result").locator(".react-flow__handle-left"));
   await page.getByTestId("node-result").click();
   const value = page.getByRole("textbox", { name: "Value" }).first();
   await value.fill("{{prompt.text}}");

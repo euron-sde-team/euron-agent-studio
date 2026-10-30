@@ -51,8 +51,13 @@ test("the run inspector shows the graph, the timeline and each step", async ({ p
   await expect(page.getByTestId("timeline")).toBeVisible();
   await expect(page.locator(".react-flow__node")).not.toHaveCount(0);
   // Loop iterations each get their own row.
-  await expect(page.getByTestId("timeline").getByRole("button", { name: /#2/ }).first()).toBeVisible();
-  await page.getByTestId("timeline").getByRole("button", { name: /^Write the brief/ }).click();
+  await expect(
+    page.getByTestId("timeline").getByRole("button", { name: /#2/ }).first(),
+  ).toBeVisible();
+  await page
+    .getByTestId("timeline")
+    .getByRole("button", { name: /^Write the brief/ })
+    .click();
   await expect(page.getByText("Model", { exact: true })).toBeVisible();
   await expect(page.getByText("Tokens", { exact: true }).first()).toBeVisible();
 });

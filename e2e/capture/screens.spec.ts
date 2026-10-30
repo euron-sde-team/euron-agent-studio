@@ -153,7 +153,10 @@ test("runs, the run inspector, approvals, templates, knowledge and settings", as
   await page.getByRole("button", { name: "More actions" }).click();
   await page.getByRole("menuitem", { name: /Triggers/ }).click();
   await expect(page.getByRole("dialog", { name: "Triggers" })).toBeVisible();
-  await page.getByRole("dialog").getByRole("tab", { name: /Webhook/ }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("tab", { name: /Webhook/ })
+    .click();
   await page.waitForTimeout(400);
   await shot(page, "14-triggers");
   await page.keyboard.press("Escape");

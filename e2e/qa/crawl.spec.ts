@@ -115,7 +115,8 @@ for (const viewport of VIEWPORTS) {
         await visit(crawl, "run-waiting", `${base}/runs/${waiting.items[0].id}`);
       await visit(crawl, "approvals", `${base}/approvals`);
       await visit(crawl, "knowledge", `${base}/knowledge`);
-      if (kbs.items[0]) await visit(crawl, "knowledge-base", `${base}/knowledge/${kbs.items[0].id}`);
+      if (kbs.items[0])
+        await visit(crawl, "knowledge-base", `${base}/knowledge/${kbs.items[0].id}`);
       await visit(crawl, "templates", `${base}/templates`);
       await visit(crawl, "settings", `${base}/settings`);
       for (const tab of SETTINGS_TABS) {
