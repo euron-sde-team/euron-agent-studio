@@ -104,6 +104,15 @@ export function useSignup() {
   });
 }
 
+export function useChangePassword() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { current_password: string; new_password: string }) =>
+      api<{ user: User }>("/api/v1/auth/password", { method: "POST", json: body }),
+    onSuccess: () => client.invalidateQueries({ queryKey: qk.me }),
+  });
+}
+
 export function useLogout() {
   const client = useQueryClient();
   return useMutation({
