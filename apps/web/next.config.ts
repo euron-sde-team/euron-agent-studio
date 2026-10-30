@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 // /env.js, never baked into the build.
 const config: NextConfig = {
   output: "standalone",
+  // No generated AGENTS.md in the app directory: contributor guidance lives in CONTRIBUTING.md.
+  agentRules: false,
   poweredByHeader: false,
   reactStrictMode: true,
   async headers() {

@@ -257,3 +257,13 @@
   background: var(--muted);
   box-shadow: none;
 }
+
+/* A tool's "lend to an agent" handle stays quiet until the node is hovered or selected. */
+.react-flow__node .as-tool-handle {
+  opacity: 0.45;
+}
+
+.react-flow__node:hover .as-tool-handle,
+.react-flow__node.selected .as-tool-handle {
+  opacity: 1;
+}
