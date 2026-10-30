@@ -330,6 +330,11 @@ class Demo:
                     expires_at=Approval.expires_at - shift,
                 )
             )
+            await session.execute(
+                update(AuditEvent)
+                .where(AuditEvent.action == "run.cancelled", AuditEvent.target_id == str(run_id))
+                .values(created_at=AuditEvent.created_at - shift)
+            )
 
     async def _review_delays(self, session: AsyncSession) -> None:
         """A reviewer answers in minutes, not milliseconds: push each decision, and the steps
