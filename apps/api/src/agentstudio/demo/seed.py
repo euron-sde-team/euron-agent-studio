@@ -19,6 +19,7 @@ from typing import Any
 import anyio
 import orjson
 from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentstudio.core.config import Settings
 from agentstudio.core.crypto import sign_webhook, webhook_context
@@ -27,7 +28,21 @@ from agentstudio.core.security import hash_password
 from agentstudio.demo.data import PEOPLE, SCENARIOS, SECOND_WORKSPACE, WORKSPACE, Scenario
 from agentstudio.engine.graph import GraphDocument
 from agentstudio.integrations.queue import InlineQueue
-from agentstudio.models import ApiKey, Approval, Flow, Run, RunStep, User, Workspace
+from agentstudio.models import (
+    ApiKey,
+    Approval,
+    AuditEvent,
+    Flow,
+    FlowVersion,
+    KnowledgeBase,
+    KnowledgeDocument,
+    Membership,
+    Run,
+    RunStep,
+    Secret,
+    User,
+    Workspace,
+)
 from agentstudio.models.enums import ApprovalStatus, Role, RunTrigger
 from agentstudio.repositories.flows import FlowRepository
 from agentstudio.repositories.users import UserRepository
@@ -46,6 +61,13 @@ from agentstudio.services.workspaces import WorkspaceService
 from agentstudio.templates import TEMPLATES
 
 log = get_logger("agentstudio.demo")
+
+# The seed paces the offline model the way a hosted model answers (about 150 ms per 100
+# tokens), so run durations and timelines in the demo have a realistic shape. The answers
+# themselves are unchanged: the offline model stays deterministic.
+SEED_PACE_MS_PER_100_TOKENS = 150
+# Setup (people, flows, knowledge, secrets) happened this long before the oldest run.
+SETUP_LEAD = timedelta(days=2)
 
 FLOW_NAMES = {
     "support-triage": "Support ticket triage",
@@ -66,6 +88,8 @@ class Demo:
         self.flows: dict[str, uuid.UUID] = {}
         self.api_key: ApiKey | None = None
         self.targets: dict[uuid.UUID, datetime] = {}
+        self.started = datetime.now(UTC)
+        self.setup_done = self.started
 
     # Setup ------------------------------------------------------------------------------
 
@@ -176,6 +200,7 @@ class Demo:
             )
             await ApiKeyService(self.c, session).create(workspace, ava, "BI export", "viewer", None)
             self.api_key = key
+        self.setup_done = datetime.now(UTC)
 
     # Runs -------------------------------------------------------------------------------
 
@@ -261,65 +286,207 @@ class Demo:
         return moment
 
     async def backdate(self) -> None:
-        """Move each run (and its steps and approval) back to its place in the last two weeks."""
+        """Give the demo a history: setup two days before the oldest run, each run at its
+        place in the last two weeks, and people taking a while to answer approvals."""
         async with self.c.db.session() as session:
-            for run_id, target in self.targets.items():
-                run = await session.get(Run, run_id)
-                if run is None:
-                    continue
-                shift = run.created_at - target
-                if shift <= timedelta(0):
-                    continue
-                await session.execute(
-                    update(Run)
-                    .where(Run.id == run_id)
-                    .values(
-                        created_at=Run.created_at - shift,
-                        started_at=Run.started_at - shift,
-                        finished_at=Run.finished_at - shift,
-                    )
-                )
-                await session.execute(
-                    update(RunStep)
-                    .where(RunStep.run_id == run_id)
-                    .values(
-                        started_at=RunStep.started_at - shift,
-                        finished_at=RunStep.finished_at - shift,
-                    )
-                )
-                await session.execute(
-                    update(Approval)
-                    .where(Approval.run_id == run_id)
-                    .values(
-                        created_at=Approval.created_at - shift,
-                        decided_at=Approval.decided_at - shift,
-                        expires_at=Approval.expires_at - shift,
-                    )
-                )
-            for flow_id in self.flows.values():
-                latest = await session.execute(
-                    select(Run.created_at, Run.status)
-                    .where(Run.flow_id == flow_id)
-                    .order_by(Run.created_at.desc())
-                    .limit(1)
-                )
-                row = latest.first()
-                if row is not None:
-                    await session.execute(
-                        update(Flow)
-                        .where(Flow.id == flow_id)
-                        .values(
-                            last_run_at=row[0], last_run_status=row[1], updated_at=Flow.updated_at
-                        )
-                    )
+            await self._backdate_runs(session)
+            await self._review_delays(session)
+            await self._backdate_setup(session)
+            await self._summaries(session)
             await session.commit()
         await self.c.redis.delete(dashboard_key(self.require_workspace().id))
 
+    async def _backdate_runs(self, session: AsyncSession) -> None:
+        for run_id, target in self.targets.items():
+            run = await session.get(Run, run_id)
+            if run is None:
+                continue
+            shift = run.created_at - target
+            if shift <= timedelta(0):
+                continue
+            await session.execute(
+                update(Run)
+                .where(Run.id == run_id)
+                .values(
+                    created_at=Run.created_at - shift,
+                    started_at=Run.started_at - shift,
+                    finished_at=Run.finished_at - shift,
+                )
+            )
+            await session.execute(
+                update(RunStep)
+                .where(RunStep.run_id == run_id)
+                .values(
+                    started_at=RunStep.started_at - shift,
+                    finished_at=RunStep.finished_at - shift,
+                )
+            )
+            await session.execute(
+                update(Approval)
+                .where(Approval.run_id == run_id)
+                .values(
+                    created_at=Approval.created_at - shift,
+                    decided_at=Approval.decided_at - shift,
+                    expires_at=Approval.expires_at - shift,
+                )
+            )
+
+    async def _review_delays(self, session: AsyncSession) -> None:
+        """A reviewer answers in minutes, not milliseconds: push each decision, and the steps
+        that ran after it, a plausible review time later."""
+        decided = await session.execute(
+            select(Approval).where(
+                Approval.workspace_id == self.require_workspace().id,
+                Approval.status.in_([ApprovalStatus.APPROVED, ApprovalStatus.REJECTED]),
+            )
+        )
+        for approval in decided.scalars().all():
+            if approval.decided_at is None:
+                continue
+            delay = timedelta(minutes=18 + approval.id.int % 70)
+            delay_ms = int(delay.total_seconds() * 1000)
+            moment = approval.decided_at
+            await session.execute(
+                update(RunStep)
+                .where(RunStep.run_id == approval.run_id, RunStep.started_at >= moment)
+                .values(
+                    started_at=RunStep.started_at + delay,
+                    finished_at=RunStep.finished_at + delay,
+                )
+            )
+            await session.execute(
+                update(RunStep)
+                .where(RunStep.run_id == approval.run_id, RunStep.node_id == approval.node_id)
+                .values(
+                    finished_at=RunStep.finished_at + delay,
+                    latency_ms=RunStep.latency_ms + delay_ms,
+                )
+            )
+            await session.execute(
+                update(Run)
+                .where(Run.id == approval.run_id)
+                .values(
+                    finished_at=Run.finished_at + delay,
+                    duration_ms=Run.duration_ms + delay_ms,
+                )
+            )
+            await session.execute(
+                update(Approval)
+                .where(Approval.id == approval.id)
+                .values(decided_at=Approval.decided_at + delay)
+            )
+            await session.execute(
+                update(AuditEvent)
+                .where(
+                    AuditEvent.action == "approval.decided",
+                    AuditEvent.target_id == str(approval.id),
+                )
+                .values(created_at=moment + delay)
+            )
+
+    async def _backdate_setup(self, session: AsyncSession) -> None:
+        """Everything created before the first run moves to two days before the oldest one."""
+        oldest = min(self.targets.values(), default=datetime.now(UTC))
+        shift = self.setup_done - (oldest - SETUP_LEAD)
+        window = (self.started, self.setup_done + timedelta(seconds=1))
+        stamped: list[Any] = [Workspace, User, Flow, KnowledgeBase, Secret]
+        for model in stamped:
+            await session.execute(
+                update(model)
+                .where(model.created_at.between(*window))
+                .values(created_at=model.created_at - shift, updated_at=model.updated_at - shift)
+            )
+        created_only: list[Any] = [
+            Membership,
+            FlowVersion,
+            KnowledgeDocument,
+            ApiKey,
+            AuditEvent,
+        ]
+        for model in created_only:
+            await session.execute(
+                update(model)
+                .where(model.created_at.between(*window))
+                .values(created_at=model.created_at - shift)
+            )
+        # Every UPDATE of a flow names updated_at, or its onupdate default stamps it "now".
+        await session.execute(
+            update(Flow)
+            .where(Flow.draft_updated_at >= self.started)
+            .values(draft_updated_at=Flow.updated_at, updated_at=Flow.updated_at)
+        )
+        # The CRM token arrived a day later, with version 2 of the triage flow.
+        later = timedelta(days=1)
+        triage = self.flows["support-triage"]
+        await session.execute(
+            update(FlowVersion)
+            .where(FlowVersion.flow_id == triage, FlowVersion.version == 2)
+            .values(created_at=FlowVersion.created_at + later)
+        )
+        await session.execute(
+            update(Flow)
+            .where(Flow.id == triage)
+            .values(updated_at=Flow.updated_at + later, draft_updated_at=Flow.updated_at + later)
+        )
+        await session.execute(
+            update(Secret)
+            .where(Secret.workspace_id == self.require_workspace().id)
+            .values(created_at=Secret.created_at + later, updated_at=Secret.updated_at + later)
+        )
+        # Someone is still working on the research flow: its draft changed yesterday.
+        edited = datetime.now(UTC) - timedelta(days=0.95)
+        await session.execute(
+            update(Flow)
+            .where(Flow.id == self.flows["research-brief"])
+            .values(updated_at=edited, draft_updated_at=edited)
+        )
+
+    async def _summaries(self, session: AsyncSession) -> None:
+        """Last-run columns and last-used times, read back from the backdated runs."""
+        for flow_id in self.flows.values():
+            latest = await session.execute(
+                select(Run.created_at, Run.status)
+                .where(Run.flow_id == flow_id)
+                .order_by(Run.created_at.desc())
+                .limit(1)
+            )
+            row = latest.first()
+            if row is not None:
+                await session.execute(
+                    update(Flow)
+                    .where(Flow.id == flow_id)
+                    .values(last_run_at=row[0], last_run_status=row[1], updated_at=Flow.updated_at)
+                )
+        if self.api_key is not None:
+            used = await session.scalar(
+                select(Run.created_at)
+                .where(Run.triggered_by_api_key_id == self.api_key.id)
+                .order_by(Run.created_at.desc())
+                .limit(1)
+            )
+            await session.execute(
+                update(ApiKey).where(ApiKey.id == self.api_key.id).values(last_used_at=used)
+            )
+        token_used = await session.scalar(
+            select(Run.created_at)
+            .where(Run.flow_id == self.flows["support-triage"])
+            .order_by(Run.created_at.desc())
+            .limit(1)
+        )
+        await session.execute(
+            update(Secret)
+            .where(Secret.workspace_id == self.require_workspace().id, Secret.name == "CRM_TOKEN")
+            .values(last_used_at=token_used, updated_at=Secret.updated_at)
+        )
+
 
 async def run(settings: Settings, password: str) -> None:
-    # Runs execute here, synchronously, with no pacing delay: the seed waits for each one.
+    # Runs execute here, in process: the seed waits for each one.
     local = settings.model_copy(
-        update={"queue_backend": "inline", "offline_delay_ms_per_100_tokens": 0}
+        update={
+            "queue_backend": "inline",
+            "offline_delay_ms_per_100_tokens": SEED_PACE_MS_PER_100_TOKENS,
+        }
     )
     container = build_container(local, application_name="agentstudio-demo")
     if not isinstance(container.queue, InlineQueue):
