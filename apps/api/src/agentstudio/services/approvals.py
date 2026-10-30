@@ -110,6 +110,7 @@ class ApprovalService:
             target_id=approval.id,
             details={
                 "decision": approval.status,
+                "title": approval.title,
                 "run_id": str(approval.run_id),
                 "node_id": approval.node_id,
             },
@@ -157,7 +158,11 @@ async def expire_due(container: Container, now: datetime) -> int:
                 action="approval.expired",
                 target_type="approval",
                 target_id=approval.id,
-                details={"run_id": str(approval.run_id), "node_id": approval.node_id},
+                details={
+                    "title": approval.title,
+                    "run_id": str(approval.run_id),
+                    "node_id": approval.node_id,
+                },
             )
             decided.append((approval, resumed))
         await session.commit()
