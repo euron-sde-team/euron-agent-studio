@@ -68,6 +68,8 @@ import { ApiError, api, saveText, ws } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { slugify } from "@/lib/format";
 import {
+  NODE_HEIGHT,
+  NODE_WIDTH,
   autoLayout,
   checkConnection,
   edgeId,
@@ -102,6 +104,19 @@ type DialogName = "run" | "publish" | "versions" | "export" | "triggers" | "deta
 
 function message(error: unknown): string | null {
   return error instanceof Error ? error.message : null;
+}
+
+/** Move a new node down until it overlaps nothing, so it never hides another node. */
+function freeSpot(start: { x: number; y: number }, nodes: CanvasNode[]): { x: number; y: number } {
+  const spot = { ...start };
+  for (let tries = 0; tries < 30; tries += 1) {
+    const taken = nodes.some(
+      (n) => Math.abs(n.position.x - spot.x) < 240 && Math.abs(n.position.y - spot.y) < 100,
+    );
+    if (!taken) return spot;
+    spot.y += 120;
+  }
+  return spot;
 }
 
 function isTyping(target: EventTarget | null): boolean {
@@ -356,15 +371,18 @@ function EditorCanvas({
       );
       const placed =
         position ??
-        (anchor
-          ? {
-              x: anchor.position.x + (definition.tool ? 0 : 320),
-              y: anchor.position.y + (definition.tool ? 190 : 0),
-            }
-          : reactFlow.screenToFlowPosition({
-              x: window.innerWidth / 2,
-              y: window.innerHeight / 2,
-            }));
+        freeSpot(
+          anchor
+            ? {
+                x: anchor.position.x + (definition.tool ? 0 : 320),
+                y: anchor.position.y + (definition.tool ? 190 : 0),
+              }
+            : reactFlow.screenToFlowPosition({
+                x: window.innerWidth / 2,
+                y: window.innerHeight / 2,
+              }),
+          nodes,
+        );
       const node: GraphNode = {
         id,
         type: definition.type,
@@ -389,6 +407,16 @@ function EditorCanvas({
       }
       setSelected(id);
       touch();
+      // Bring a node added from the palette into view (a drop is already where you look).
+      if (!position) {
+        requestAnimationFrame(
+          () =>
+            void reactFlow.setCenter(placed.x + NODE_WIDTH / 2, placed.y + NODE_HEIGHT / 2, {
+              zoom: reactFlow.getZoom(),
+              duration: 250,
+            }),
+        );
+      }
     },
     [readOnly, nodes, selected, reactFlow, remember, connect, touch],
   );
