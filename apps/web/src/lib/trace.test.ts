@@ -47,6 +47,7 @@ describe("applyEvent", () => {
     ]);
     expect(search[0]!.input).toEqual({ q: "a" });
     expect(search[0]!.latencyMs).toBe(12);
+    expect(search[0]!.startedAt).toBe(new Date(3).toISOString());
     expect(state.steps.find((s) => s.nodeId === "agent")!.events).toEqual([
       { type: "tool_call", name: "search" },
     ]);

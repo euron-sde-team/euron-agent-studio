@@ -24,6 +24,8 @@ export type TraceStep = {
   cached: boolean;
   latencyMs: number | null;
   events: Record<string, unknown>[];
+  /** When the step started (ISO), from the stream entry id, which is a millisecond clock. */
+  startedAt: string | null;
 };
 
 export type TraceState = {
@@ -76,6 +78,12 @@ function upsert(
   return next;
 }
 
+/** Redis stream ids are "<milliseconds>-<sequence>": the time each event was written. */
+export function eventTime(id: string | null): string | null {
+  const millis = id ? Number(id.split("-")[0]) : NaN;
+  return Number.isFinite(millis) && millis > 0 ? new Date(millis).toISOString() : null;
+}
+
 function blank(key: string, data: Record<string, unknown>): TraceStep {
   return {
     key,
@@ -97,6 +105,7 @@ function blank(key: string, data: Record<string, unknown>): TraceStep {
     cached: false,
     latencyMs: null,
     events: [],
+    startedAt: null,
   };
 }
 
@@ -119,6 +128,7 @@ export function applyEvent(state: TraceState, event: TraceEvent): TraceState {
           input: data.input ?? step?.input ?? null,
           seq: num(data.seq) || step?.seq || 0,
           label: str(data.label, step?.label ?? ""),
+          startedAt: step?.startedAt ?? eventTime(event.id),
         })),
       };
     }
