@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiFile, saveText, ws } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { formatRelative, slugify } from "@/lib/format";
+import { pythonLiteral } from "@/lib/python";
 import { useFlowActions, useVersions, useWebhook } from "@/lib/queries";
 import { runtimeEnv } from "@/lib/runtime-env";
 import type { Flow, GraphNode, InputField, Issue } from "@/lib/types";
@@ -453,9 +454,10 @@ export function TriggersDialog({
     version: "published",
   });
   const curl = `curl -s -X POST "${apiUrl}${ws(workspace)}/flows/${flow.id}/runs?wait=30" \\\n  -H "authorization: Bearer $AGENTSTUDIO_API_KEY" \\\n  -H "content-type: application/json" \\\n  -d '${sample.replace(/'/g, "'\\''")}'`;
-  const signing = `import hashlib, hmac, json, time, httpx
+  const signing = `import hashlib, hmac, json, os, time, httpx
 
-body = json.dumps(${JSON.stringify((start?.config.sample as Record<string, unknown>) ?? {})}).encode()
+SECRET = os.environ["AGENTSTUDIO_WEBHOOK_SECRET"]  # shown once, when the webhook was enabled
+body = json.dumps(${pythonLiteral(start?.config.sample ?? {})}).encode()
 stamp = str(int(time.time()))
 signature = hmac.new(SECRET.encode(), stamp.encode() + b"." + body, hashlib.sha256).hexdigest()
 httpx.post("${webhook.url ?? "<webhook url>"}", content=body, headers={
