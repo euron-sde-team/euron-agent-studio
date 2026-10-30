@@ -42,6 +42,10 @@ x-api-image: &api-image
     context: ../..
     dockerfile: infra/docker/api.Dockerfile
   image: agentstudio-api:local
+  # As on ECS: a read-only root filesystem with a writable /tmp.
+  read_only: true
+  tmpfs:
+    - /tmp:uid=10001,gid=10001
 
 services:
   postgres:
@@ -90,8 +94,6 @@ services:
       <<: *app-env
     ports:
       - "127.0.0.1:${AGENTSTUDIO_API_PORT:-8120}:8080"
-    tmpfs:
-      - /tmp:uid=10001,gid=10001
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -110,8 +112,6 @@ services:
       WORKER_METRICS_PORT: "9100"
     ports:
       - "127.0.0.1:${AGENTSTUDIO_WORKER_METRICS_PORT:-9120}:9100"
-    tmpfs:
-      - /tmp:uid=10001,gid=10001
     healthcheck:
       test:
         [
@@ -136,6 +136,9 @@ services:
       context: ../..
       dockerfile: infra/docker/web.Dockerfile
     image: agentstudio-web:local
+    read_only: true
+    tmpfs:
+      - /tmp
     environment:
       # The browser calls the API directly, so this is the host-facing address.
       API_URL: http://localhost:${AGENTSTUDIO_API_PORT:-8120}
