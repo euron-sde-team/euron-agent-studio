@@ -116,23 +116,23 @@ The repository builds two images. The API image carries three entry points.
 
 | Container | Source | Listens | Role |
 | --- | --- | --- | --- |
-| Web app | `apps/web` (Next.js, standalone) | 3000 (host 3120) | The canvas editor, runs, approvals, knowledge, settings. Serves `/env.js` runtime config and proxies `/api/*` to the API, so the browser talks to one origin. |
-| API | `apps/api/src/agentstudio/main.py` | 8120 | REST under `/api/v1`, server-sent events for run traces, webhooks under `/api/v1/hooks`, the sandbox under `/sandbox`, probes and metrics. |
-| Worker | `apps/api/src/agentstudio/worker.py` | none (metrics on 9120 when enabled) | Long-polls SQS, executes runs with bounded concurrency, heartbeats, reaps stuck runs and expired approvals. |
+| Web app | `apps/web` (Next.js, standalone) | 8080 (host 3120) | The canvas editor, runs, approvals, knowledge, templates, settings. Serves `/env.js` with the runtime configuration (the API URL), so one image serves every environment. The browser calls the API directly, with the session cookie, under a strict CORS allowlist. |
+| API | `apps/api/src/agentstudio/main.py` | 8080 (host 8120) | REST under `/api/v1`, server-sent events for run traces, webhooks under `/api/v1/hooks`, the OpenAI-compatible offline model under `/api/v1/offline/v1`, the sandbox under `/sandbox`, probes and metrics. |
+| Worker | `apps/api/src/agentstudio/worker.py` | metrics on 9100 (host 9120) | Long-polls SQS, executes runs with bounded concurrency, heartbeats, re-queues runs whose worker vanished and expires approvals. |
 | Migrate (one-off) | `agentstudio migrate` | none | Applies Alembic migrations under a Postgres advisory lock, then exits. |
 | Terraform (one-off, local) | `hashicorp/terraform` | none | Applies `infra/terraform/envs/local-floci` to the emulator before anything that needs AWS starts. |
 
-Backing services: PostgreSQL 16, Redis 7, and locally the Floci emulator for SQS, S3, KMS
-and Secrets Manager.
+Backing services: PostgreSQL 16, Valkey 8 (Redis-compatible), and locally the Floci emulator
+for SQS, S3, KMS and Secrets Manager.
 
 ### 3.1 Local shape (`make up`)
 
 ```mermaid
 flowchart LR
-  browser["Browser<br/>localhost:3120"] --> web["web<br/>Next.js"]
-  web -->|/api/* proxy| api["api<br/>FastAPI"]
+  browser["Browser"] -->|pages, localhost:3120| web["web<br/>Next.js"]
+  browser -->|API and traces, localhost:8120| api["api<br/>FastAPI"]
   api --> pg[("postgres<br/>5452")]
-  api --> redis[("redis<br/>6412")]
+  api --> redis[("valkey<br/>6412")]
   worker["worker"] --> pg
   worker --> redis
   api -->|send run message| floci["floci<br/>SQS, S3, KMS,<br/>Secrets Manager<br/>4612"]
@@ -146,17 +146,17 @@ flowchart LR
 ```mermaid
 flowchart TB
   subgraph edge["Edge"]
-    alb["Application Load Balancer<br/>/api/*, /sandbox/*, /livez, /readyz -> api<br/>everything else -> web"]
+    alb["Application Load Balancer + optional WAF<br/>app.domain -> web, api.domain -> api"]
   end
   subgraph ecs["ECS Fargate, private subnets"]
     web["web service"]
     api["api service"]
-    worker["worker service<br/>(scales on queue depth)"]
-    oneoff["migrate one-off task"]
+    worker["worker service"]
+    oneoff["cli one-off task<br/>(migrate, users)"]
   end
   subgraph data["Data plane"]
     pg[("RDS PostgreSQL 16")]
-    redis[("ElastiCache Redis 7<br/>TLS + AUTH")]
+    redis[("ElastiCache Valkey 8<br/>TLS + auth token")]
     sqs["SQS runs queue<br/>+ dead-letter queue"]
     s3[("S3 knowledge bucket<br/>private, SSE-KMS")]
     sm["Secrets Manager"]
@@ -182,20 +182,24 @@ flowchart TB
   pg -.-> kms
 ```
 
-`envs/aws-dev` and `envs/aws-prod` compose the same modules with different sizes and safety
-switches (Multi-AZ, deletion protection, autoscaling bounds).
+`envs/aws-dev` and `envs/aws-prod` call the same `deployment` module with different sizes
+and safety switches (zones, NAT per zone, Multi-AZ, cache replica, WAF, deletion
+protection, autoscaling bounds, log retention).
 
 ## 4. How the main flows work
 
 ### 4.1 Editing a flow
 
-1. The editor loads the flow (`GET /flows/{id}`): the draft graph and its `draft_revision`.
-2. Every change (add, connect, move, configure) updates the local graph, pushes an undo
-   snapshot, and schedules two debounced calls: `POST /flows/{id}/validate` (issues shown
-   inline on nodes and edges) and `PUT /flows/{id}/draft` with the revision it was based on.
-3. The API validates the document (shape, limits, node configs) and stores it with
-   `draft_revision + 1`. A save based on an older revision is refused with `409`, so two
-   tabs never silently overwrite each other.
+1. The editor loads the flow (`GET /flows/{id}`): the draft graph, its `draft_revision` and
+   its validation issues.
+2. Every change (add, connect, move, configure) updates the local graph, records an undo
+   snapshot (typing in one field is one undo step) and schedules an autosave one second
+   later: `PUT /flows/{id}/draft` with the revision the edit was based on.
+3. The API checks the document's shape and limits, stores it with `draft_revision + 1` and
+   answers with the new revision and the full list of validation issues, which the editor
+   shows inline: counts on nodes, red edges, messages under the fields they concern. A save
+   based on an older revision is refused with `409`, so two tabs never silently overwrite
+   each other.
 4. **Publish** validates again (errors block publishing; warnings do not), copies the draft
    into a new immutable `flow_versions` row and points the flow at it.
 
@@ -214,7 +218,7 @@ sequenceDiagram
   A->>A: authorise, rate limit, validate inputs against the Start schema
   A->>P: INSERT run (status queued)
   A->>Q: SendMessage {run_id}
-  A-->>C: 202 {run} (or 200 with outputs when ?wait= and it finishes in time)
+  A-->>C: 202 {run} (with ?wait=N, the run as it is when it finishes, pauses or N passes)
   W->>Q: ReceiveMessage
   W->>P: UPDATE runs SET status = running WHERE id = ... AND status = queued
   loop every step
@@ -307,7 +311,8 @@ runs it against the offline provider and asserts its outputs equal the engine's.
 ## 5. Model providers
 
 One interface, three implementations, chosen per node by a model reference
-(`offline`, `openai:gpt-4o-mini`, `ollama:llama3.2`):
+(`offline`, `openai:gpt-4o-mini`, `ollama:llama3.2`). New steps start with the workspace's
+default model:
 
 | Provider | When | Notes |
 | --- | --- | --- |
@@ -323,8 +328,8 @@ models, overridable with `MODEL_PRICES`). See [ADR 0006](adr/0006-deterministic-
 | Store | Holds | Notes |
 | --- | --- | --- |
 | PostgreSQL | Users, workspaces, members, API keys, audit events, flows, versions, runs, steps, approvals, knowledge bases, documents, chunks (with a full-text index), secrets (ciphertext) | The system of record. Runs and steps are written as they happen. |
-| Redis | Run trace streams, run cancel flags, rate-limit windows, session revocations, API key last-use throttle, model response cache, dashboard cache, the worker leader lock | Losing Redis loses only live traces in flight and caches; runs still finish and their steps remain in Postgres. |
-| SQS | `{run_id}` messages; a dead-letter queue after three receives | Messages carry ids only; the run row is the truth. |
+| Valkey (Redis) | Run trace streams, run cancel flags, rate-limit windows, webhook replay guards, model response cache, dashboard cache, the reaper's leader lock | Losing it loses only live traces in flight and caches; runs still finish and their steps remain in Postgres. |
+| SQS | `{run_id, workspace_id}` messages; a dead-letter queue after ten receives | Messages carry ids only; the run row is the truth. |
 | S3 (or local disk) | Original knowledge documents | Private bucket, SSE-KMS, keys generated by the server. |
 
 ## 7. Failure handling
@@ -334,7 +339,8 @@ models, overridable with `MODEL_PRICES`). See [ADR 0006](adr/0006-deterministic-
 | A node fails | Retried per its policy. Then the run fails (other in-flight steps are cancelled), unless the node is set to continue on error, in which case its output carries the error and the flow continues. |
 | A model provider is down or rate limits | Retried with back-off as a retryable error; the step shows each attempt. |
 | A worker crashes mid-run | The run's heartbeat stops. The reaper (one elected worker) re-queues runs whose heartbeat is older than 90 seconds; the next worker resumes from the last finished step. Steps that were running are executed again (at-least-once per step). |
-| A worker is stopped (deploy) | SIGTERM stops receiving; in-flight runs get a grace period, and anything unfinished is left to resume elsewhere. |
+| A worker is stopped (deploy) | SIGTERM stops receiving; in-flight runs get a grace period, then anything unfinished is handed back (status queued, message visible at once) and resumes elsewhere from its last finished step. |
+| A run keeps losing its worker | After five claims the reaper fails it with `worker_lost` instead of handing it out forever. |
 | Duplicate SQS delivery | The claim is a conditional update; the duplicate is deleted. |
 | Redis unavailable | Readiness fails; runs still execute and persist, live traces fall back to Postgres snapshots on reconnect. |
 | A run exceeds `RUN_TIMEOUT_S` | It fails with `run_timeout`. |
@@ -342,8 +348,9 @@ models, overridable with `MODEL_PRICES`). See [ADR 0006](adr/0006-deterministic-
 
 ## 8. Scaling and limits
 
-- API and worker are stateless and scale horizontally. On AWS the worker service scales on
-  the queue's visible message count.
+- API and worker are stateless and scale horizontally. On AWS every service scales on CPU
+  between its minimum and maximum task count, and an alarm fires when the oldest queued
+  run has waited more than ten minutes.
 - Hot queries are indexed: run history by `(workspace_id, created_at)`, by flow, the
   pending approvals partial index, the stale-run partial index for the reaper, the GIN
   full-text index on chunks.
@@ -372,6 +379,7 @@ configuration refuses development defaults at boot. Details and limitations are 
 | PostgreSQL | 5452 |
 | Redis | 6412 |
 | Floci | 4612 |
-| Worker metrics, test dependencies (`scripts/test-deps.sh`) | 9120 to 9129 |
+| Worker metrics | 9120 |
+| Integration test dependencies (`scripts/test-deps.sh`): Postgres, Valkey, Floci | 9121 to 9123 |
 
 All bind to `127.0.0.1` and can be overridden in `deploy/compose/.env`.
