@@ -23,11 +23,16 @@ class Run(IdMixin, Base):
         Index("ix_runs_workspace_id_created_at", "workspace_id", "created_at"),
         Index("ix_runs_flow_id_created_at", "flow_id", "created_at"),
         Index("ix_runs_workspace_id_status_created_at", "workspace_id", "status", "created_at"),
-        # Small partial index for the reaper: only running runs are in it.
+        # Small partial indexes for the reaper: only running (or queued) runs are in them.
         Index(
             "ix_runs_running_heartbeat",
             "heartbeat_at",
             postgresql_where=text("status = 'running'"),
+        ),
+        Index(
+            "ix_runs_queued_enqueued_at",
+            "enqueued_at",
+            postgresql_where=text("status = 'queued'"),
         ),
     )
 
@@ -60,6 +65,9 @@ class Run(IdMixin, Base):
     )
     claims: Mapped[int] = mapped_column(default=0)
     heartbeat_at: Mapped[datetime | None]
+    # When the run was last put on the queue. A run still queued long after this lost its
+    # message (or never had one), and the reaper sends it again.
+    enqueued_at: Mapped[datetime | None]
     cancel_requested_at: Mapped[datetime | None]
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     started_at: Mapped[datetime | None]
