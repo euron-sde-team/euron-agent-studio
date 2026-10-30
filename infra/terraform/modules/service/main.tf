@@ -275,6 +275,8 @@ resource "aws_ecs_task_definition" "this" {
     environment            = [for k, v in var.environment : { name = k, value = v }]
     secrets                = var.secrets
     linuxParameters        = { initProcessEnabled = true }
+    # Seconds between SIGTERM and SIGKILL: long enough for the process's own graceful stop.
+    stopTimeout = var.stop_timeout
     # The root filesystem is read-only; the runtime only needs a writable /tmp.
     mountPoints = [{ sourceVolume = "tmp", containerPath = "/tmp", readOnly = false }]
     healthCheck = local.with_service && var.container_health_command != null ? {

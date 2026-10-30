@@ -98,6 +98,16 @@ variable "internal_paths" {
   }
 }
 
+variable "stop_timeout" {
+  description = "Seconds ECS waits after SIGTERM before SIGKILL. Fargate allows 2 to 120."
+  type        = number
+  default     = 30
+  validation {
+    condition     = var.stop_timeout >= 2 && var.stop_timeout <= 120
+    error_message = "Fargate accepts a stop timeout from 2 to 120 seconds."
+  }
+}
+
 variable "health_check_path" {
   description = "Load balancer health check path."
   type        = string

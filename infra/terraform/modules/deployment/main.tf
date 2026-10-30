@@ -244,12 +244,19 @@ module "api" {
 # Workers long-poll the run queue; one at a time (elected through Valkey) also re-queues
 # runs whose worker vanished and expires approvals past their deadline.
 module "worker" {
-  source                  = "../service"
-  name_prefix             = var.name_prefix
-  name                    = "worker"
-  image                   = local.images.api
-  command                 = ["python", "-m", "agentstudio.worker"]
-  environment             = merge(local.app_environment, { WORKER_CONCURRENCY = tostring(var.worker_concurrency), WORKER_METRICS_PORT = "9100" })
+  source      = "../service"
+  name_prefix = var.name_prefix
+  name        = "worker"
+  image       = local.images.api
+  command     = ["python", "-m", "agentstudio.worker"]
+  # On SIGTERM a worker lets in-flight runs finish for WORKER_SHUTDOWN_GRACE_S, then hands
+  # the rest back to the queue; ECS must wait longer than that before it kills the task.
+  environment = merge(local.app_environment, {
+    WORKER_CONCURRENCY      = tostring(var.worker_concurrency)
+    WORKER_METRICS_PORT     = "9100"
+    WORKER_SHUTDOWN_GRACE_S = "90"
+  })
+  stop_timeout            = 120
   secrets                 = local.app_secrets
   attach_to_load_balancer = false
   cluster_arn             = aws_ecs_cluster.this.arn
