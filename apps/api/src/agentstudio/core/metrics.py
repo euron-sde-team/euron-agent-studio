@@ -65,6 +65,6 @@ WEBHOOKS = Counter(
 )
 REAPED = Counter(
     "agentstudio_reaped_total",
-    "Runs re-queued after a lost heartbeat and approvals expired, by kind.",
+    "Reaper actions by kind: run (lost heartbeat), message (lost message resent), approval.",
     ["kind"],
 )
