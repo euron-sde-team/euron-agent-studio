@@ -147,7 +147,7 @@ to plain Python whenever you want one.
 | **Models** | Built-in deterministic offline model (the default), any OpenAI-compatible API, Ollama |
 | **Templates** | 6 ready-to-run flows; `make demo` seeds two weeks of real runs from them |
 | **Infrastructure** | 12 Terraform modules, 3 environments (local emulator, AWS dev, AWS prod) |
-| **Tests** | 255 unit (216 API, 39 web), 72 integration, 22 browser end-to-end, plus a QA crawl of every page at two widths |
+| **Tests** | 255 unit (216 API, 39 web), 73 integration, 22 browser end-to-end, plus a QA crawl of every page at two widths |
 | **License** | MIT |
 
 ## 🖼️ Screenshots
@@ -467,7 +467,7 @@ Report vulnerabilities privately: see [SECURITY.md](SECURITY.md).
 | Suite | What it proves | Run |
 | --- | --- | --- |
 | Unit (255) | The executor (parallelism, loops, retries, timeouts, pause and resume, masking), validation, the expression runtime, the offline model, providers, the network guard, every template, the exporter (every template's script reproduces the engine), editor logic | `make test` |
-| Integration (72) | The real API against PostgreSQL, Valkey and the AWS emulator: auth, roles, flows and versions, runs and live traces, approvals, knowledge on S3, secrets, webhooks, the SQS worker under duplicates, crashes and lost messages, an isolation sweep | `make test-integration` |
+| Integration (73) | The real API against PostgreSQL, Valkey and the AWS emulator: auth, roles, flows and versions, runs and live traces, approvals, knowledge on S3, secrets, webhooks, the SQS worker under duplicates, crashes and lost messages, an isolation sweep | `make test-integration` |
 | Browser (22) | Building and running a flow on the canvas, live traces, approvals, failures and re-runs, exports and imports, knowledge, settings, roles, templates | `make e2e` |
 | QA crawl | Every page at desktop and mobile widths: no console errors, failed requests, broken links or serious accessibility violations | `make qa` |
 | Infrastructure | `terraform validate` (3 environments), tflint, checkov | `make tf-validate tf-lint tf-security` |
