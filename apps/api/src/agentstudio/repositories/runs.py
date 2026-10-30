@@ -132,6 +132,30 @@ class RunRepository(Repository):
             or 0
         )
 
+    async def resend_due(
+        self, before: datetime, now: datetime, limit: int = 50
+    ) -> list[tuple[uuid.UUID, uuid.UUID]]:
+        """Queued runs last sent before `before`, stamped as sent `now`: (run id, workspace id).
+
+        A queued run is claimed within seconds of its message arriving, so one still queued
+        long after it was sent lost that message, or never had one (the queue was unreachable
+        when it started).
+        """
+        due = (
+            select(Run.id)
+            .where(Run.status == RunStatus.QUEUED, Run.enqueued_at < before)
+            .order_by(Run.enqueued_at)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        result = await self.session.execute(
+            update(Run)
+            .where(Run.id.in_(due.scalar_subquery()), Run.status == RunStatus.QUEUED)
+            .values(enqueued_at=now)
+            .returning(Run.id, Run.workspace_id)
+        )
+        return [(row.id, row.workspace_id) for row in result]
+
     async def stale(self, before: datetime, limit: int = 50) -> list[Run]:
         result = await self.session.execute(
             select(Run)

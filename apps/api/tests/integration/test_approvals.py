@@ -137,7 +137,7 @@ async def test_expired_approvals_count_as_rejected(
             .values(expires_at=datetime.now(UTC) - timedelta(minutes=1))
         )
         await session.commit()
-    _requeued, expired = await RunExecution(container).reap()
+    expired = (await RunExecution(container).reap()).expired
     assert expired >= 1
     finished = await wait_for_run(client, admin, workspace, run["id"], ("succeeded", "failed"))
     assert finished["outputs"]["status"] == "escalated"

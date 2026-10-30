@@ -13,7 +13,7 @@ import contextlib
 import time
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -38,7 +38,7 @@ from agentstudio.engine.graph import GraphDocument, StartConfig
 from agentstudio.engine.plan import InvalidGraphError, build_plan, secret_names
 from agentstudio.engine.ports import EngineServices
 from agentstudio.engine.recorder import ApprovalRequest, ApprovalTicket, StepEnd, StepStart
-from agentstudio.integrations.queue import RunJob
+from agentstudio.integrations.queue import RunJob, send_or_defer
 from agentstudio.models import Approval, Run, RunStep, Workspace
 from agentstudio.models.enums import ApprovalStatus, RunStatus, RunTrigger, StepStatus
 from agentstudio.providers.registry import WorkspaceModels
@@ -59,6 +59,16 @@ from agentstudio.services.views import RunDetailView, RunView, triggered_by
 log = get_logger("agentstudio.runs")
 FINAL = frozenset({RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELLED})
 MAX_CLAIMS = 5
+# A queued run is claimed seconds after its message arrives. One still queued this long after
+# it was sent lost the message (or never had one), so the reaper sends it again; duplicates
+# are harmless because claims are conditional.
+RESEND_AFTER_S = 300
+
+
+class Reaped(NamedTuple):
+    requeued: int  # running runs whose worker vanished, handed out again
+    resent: int  # queued runs whose message was lost, sent again
+    expired: int  # approvals past their deadline
 
 
 class RunService:
@@ -113,6 +123,7 @@ class RunService:
                 status=RunStatus.QUEUED,
                 trigger=trigger,
                 inputs=inputs,
+                enqueued_at=datetime.now(UTC),
                 triggered_by_user_id=principal.user_id if principal else None,
                 triggered_by_api_key_id=principal.api_key_id if principal else None,
                 rerun_of_id=rerun_of.id if rerun_of else None,
@@ -130,7 +141,7 @@ class RunService:
                 "trigger": trigger,
             },
         )
-        await self.c.queue.enqueue(RunJob(run.id, workspace.id))
+        await send_or_defer(self.c.queue, RunJob(run.id, workspace.id))
         await self.c.redis.delete(dashboard_key(workspace.id))
         return run
 
@@ -542,7 +553,7 @@ class RunExecution:
                 run_id,
                 RunStatus.QUEUED,
                 expected=(RunStatus.RUNNING,),
-                values={"heartbeat_at": None},
+                values={"heartbeat_at": None, "enqueued_at": datetime.now(UTC)},
             )
             await session.commit()
         log.info("run_released", run_id=str(run_id))
@@ -596,18 +607,23 @@ class RunExecution:
             await self.c.trace.finished(run.id)
         await self.c.redis.delete(dashboard_key(run.workspace_id))
 
-    async def reap(self) -> tuple[int, int]:
-        """Re-queue runs whose worker vanished; expire approvals past their deadline.
+    async def reap(self) -> Reaped:
+        """Re-queue runs whose worker vanished, resend lost messages, expire approvals.
 
         A run that keeps losing its worker (one that crashes the process, for example) is
         failed after MAX_CLAIMS attempts instead of being handed out forever.
         """
         now = datetime.now(UTC)
         cutoff = datetime.fromtimestamp(now.timestamp() - self.c.settings.stale_run_s, UTC)
+        resend_before = datetime.fromtimestamp(now.timestamp() - RESEND_AFTER_S, UTC)
         requeued: list[RunJob] = []
         failed: list[Run] = []
         async with self.c.db.session() as session:
             repo = RunRepository(session)
+            resent = [
+                RunJob(run_id, workspace_id)
+                for run_id, workspace_id in await repo.resend_due(resend_before, now)
+            ]
             for run in await repo.stale(cutoff):
                 if run.claims >= MAX_CLAIMS:
                     error = {
@@ -623,7 +639,7 @@ class RunExecution:
                     run.id,
                     RunStatus.QUEUED,
                     expected=(RunStatus.RUNNING,),
-                    values={"heartbeat_at": None},
+                    values={"heartbeat_at": None, "enqueued_at": now},
                 ):
                     requeued.append(RunJob(run.id, run.workspace_id))
             await session.commit()
@@ -634,6 +650,10 @@ class RunExecution:
         for job in requeued:
             metrics.REAPED.labels("run").inc()
             log.warning("run_requeued", run_id=str(job.run_id))
-            await self.c.queue.enqueue(job)
+            await send_or_defer(self.c.queue, job)
+        for job in resent:
+            metrics.REAPED.labels("message").inc()
+            log.warning("run_message_resent", run_id=str(job.run_id))
+            await send_or_defer(self.c.queue, job)
         expired = await expire_due(self.c, now)
-        return len(requeued), expired
+        return Reaped(len(requeued), len(resent), expired)

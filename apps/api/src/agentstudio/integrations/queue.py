@@ -153,6 +153,19 @@ class SqsQueue:
         await self.depth()
 
 
+async def send_or_defer(queue: JobQueue, job: RunJob) -> None:
+    """Put a queued run on the queue, after its row is committed.
+
+    The row is the outbox: when the queue cannot be reached, the reaper sends the run again
+    once it has been queued for a while (`services.runs.RESEND_AFTER_S`), so callers never
+    fail a request whose run is already stored.
+    """
+    try:
+        await queue.enqueue(job)
+    except Exception:
+        log.warning("run_send_deferred", run_id=str(job.run_id), exc_info=True)
+
+
 def build_queue(settings: Settings) -> InlineQueue | SqsQueue:
     if settings.queue_backend == "sqs":
         return SqsQueue(settings)

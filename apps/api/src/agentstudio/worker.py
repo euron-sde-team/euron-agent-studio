@@ -111,9 +111,9 @@ class Worker:
             await asyncio.sleep(REAPER_INTERVAL_S)
             try:
                 if await self.c.redis.set("lock:reaper", b"1", ex=REAPER_INTERVAL_S - 5, nx=True):
-                    requeued, expired = await self.execution.reap()
-                    if requeued or expired:
-                        log.info("reaped", requeued=requeued, expired=expired)
+                    reaped = await self.execution.reap()
+                    if any(reaped):
+                        log.info("reaped", **reaped._asdict())
             except Exception:
                 log.exception("reaper_failed")
 

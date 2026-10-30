@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agentstudio.core import metrics
 from agentstudio.core.errors import ConflictError, NotFoundError
 from agentstudio.core.logging import get_logger
-from agentstudio.integrations.queue import RunJob
+from agentstudio.integrations.queue import RunJob, send_or_defer
 from agentstudio.models import Approval, User, Workspace
 from agentstudio.models.enums import ApprovalStatus, RunStatus
 from agentstudio.repositories.approvals import ApprovalRepository
@@ -99,7 +99,10 @@ class ApprovalService:
         approval.comment = comment.strip()
         runs = RunRepository(self.session)
         resumed = await runs.set_status(
-            approval.run_id, RunStatus.QUEUED, expected=(RunStatus.WAITING,)
+            approval.run_id,
+            RunStatus.QUEUED,
+            expected=(RunStatus.WAITING,),
+            values={"enqueued_at": now},
         )
         await audit.record(
             self.session,
@@ -135,7 +138,7 @@ async def _after_decision(
         },
     )
     if resumed:
-        await container.queue.enqueue(RunJob(approval.run_id, approval.workspace_id))
+        await send_or_defer(container.queue, RunJob(approval.run_id, approval.workspace_id))
     await container.redis.delete(dashboard_key(approval.workspace_id))
 
 
@@ -149,7 +152,10 @@ async def expire_due(container: Container, now: datetime) -> int:
             approval.decided_at = now
             approval.comment = "Expired before anyone decided."
             resumed = await runs.set_status(
-                approval.run_id, RunStatus.QUEUED, expected=(RunStatus.WAITING,)
+                approval.run_id,
+                RunStatus.QUEUED,
+                expected=(RunStatus.WAITING,),
+                values={"enqueued_at": now},
             )
             await audit.record(
                 session,

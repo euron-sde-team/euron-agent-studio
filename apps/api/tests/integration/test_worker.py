@@ -99,6 +99,23 @@ async def worker(settings: Settings, **overrides: Any) -> AsyncIterator[Worker]:
         await container.close()
 
 
+async def enqueued_at(app: FastAPI, run_id: str) -> datetime:
+    async with app.state.container.db.session() as session:
+        value = await session.scalar(select(Run.enqueued_at).where(Run.id == uuid.UUID(run_id)))
+    assert value is not None
+    return value
+
+
+async def backdate_send(app: FastAPI, run_id: str) -> None:
+    async with app.state.container.db.session() as session:
+        await session.execute(
+            update(Run)
+            .where(Run.id == uuid.UUID(run_id))
+            .values(enqueued_at=datetime.now(UTC) - timedelta(minutes=10))
+        )
+        await session.commit()
+
+
 async def claims(app: FastAPI, run_id: str) -> int:
     async with app.state.container.db.session() as session:
         return int(await session.scalar(select(Run.claims).where(Run.id == uuid.UUID(run_id))))
@@ -184,12 +201,53 @@ async def test_runs_whose_worker_died_are_requeued_and_finished(
             .values(status=RunStatus.RUNNING, claims=1, heartbeat_at=stale, started_at=stale)
         )
         await session.commit()
-    requeued, _ = await RunExecution(container).reap()
-    assert requeued == 1
+    assert (await RunExecution(container).reap()).requeued == 1
     async with worker(queued.settings):
         run = await wait_for_run(queued.client, admin, workspace, run_id, ("succeeded", "failed"))
     assert run["outputs"] == {"result": "recovered"}
     assert await claims(queued.app, run_id) == 2
+
+
+async def test_runs_whose_message_was_lost_are_sent_again(queued: Queued, admin: Actor) -> None:
+    workspace = await new_workspace(queued.client, admin)
+    flow = await create_flow(queued.client, admin, workspace)
+    run_id = await start(queued, admin, workspace, flow["id"], {"input": "resent"})
+    # The message vanished before any worker claimed the run.
+    assert drain(queued.infra) == 1
+    execution = RunExecution(queued.app.state.container)
+    sent = await enqueued_at(queued.app, run_id)
+    await execution.reap()
+    # Too early: a message that is merely slow must not be doubled.
+    assert await enqueued_at(queued.app, run_id) == sent
+    await backdate_send(queued.app, run_id)
+    await execution.reap()
+    assert await enqueued_at(queued.app, run_id) > sent
+    async with worker(queued.settings):
+        run = await wait_for_run(queued.client, admin, workspace, run_id, ("succeeded", "failed"))
+    assert run["outputs"] == {"result": "resent"}
+    assert await claims(queued.app, run_id) == 1
+
+
+async def test_a_run_survives_an_unreachable_queue(
+    queued: Queued, admin: Actor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = await new_workspace(queued.client, admin)
+    flow = await create_flow(queued.client, admin, workspace)
+    container = queued.app.state.container
+
+    async def unreachable(job: RunJob) -> None:
+        raise ConnectionError("queue unreachable")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(container.queue, "enqueue", unreachable)
+        # Stored is accepted: the client gets its run, not an error it might retry.
+        run_id = await start(queued, admin, workspace, flow["id"], {"input": "deferred"})
+    assert in_queue(queued.infra) == 0
+    await backdate_send(queued.app, run_id)
+    await RunExecution(container).reap()
+    async with worker(queued.settings):
+        run = await wait_for_run(queued.client, admin, workspace, run_id, ("succeeded", "failed"))
+    assert run["outputs"] == {"result": "deferred"}
 
 
 async def test_runs_that_keep_losing_their_worker_are_stopped(queued: Queued, admin: Actor) -> None:
@@ -206,8 +264,7 @@ async def test_runs_that_keep_losing_their_worker_are_stopped(queued: Queued, ad
             .values(status=RunStatus.RUNNING, claims=5, heartbeat_at=stale, started_at=stale)
         )
         await session.commit()
-    requeued, _ = await RunExecution(container).reap()
-    assert requeued == 0
+    assert (await RunExecution(container).reap()).requeued == 0
     run = await wait_for_run(queued.client, admin, workspace, run_id, ("failed",))
     assert run["error"]["code"] == "worker_lost"
     assert in_queue(queued.infra) == 0
