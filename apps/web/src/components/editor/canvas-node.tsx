@@ -74,7 +74,7 @@ function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
           position={Position.Left}
           id="in"
           className="!size-3 !border-2"
-          aria-label="Input"
+          title="Input"
         />
       ) : null}
       <div className="flex items-start gap-2.5 px-3 py-2.5">
@@ -107,10 +107,10 @@ function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
               {errors}
             </span>
           ) : warnings > 0 ? (
-            <CircleAlert
-              className="text-warning size-3.5"
-              aria-label={`${warnings} warning${warnings === 1 ? "" : "s"}`}
-            />
+            <span title={`${warnings} warning${warnings === 1 ? "" : "s"}`}>
+              <CircleAlert className="text-warning size-3.5" aria-hidden />
+              <span className="sr-only">{`${warnings} warning${warnings === 1 ? "" : "s"}`}</span>
+            </span>
           ) : null}
         </div>
       </div>
@@ -128,7 +128,7 @@ function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
                 id={handle}
                 className="!-right-[18px] !size-3 !border-2"
                 style={{ top: "50%" }}
-                aria-label={handleLabel(node, handle)}
+                title={handleLabel(node, handle)}
               />
             </div>
           ))}
@@ -139,7 +139,7 @@ function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
           position={Position.Right}
           id={flowHandles[0]}
           className="!size-3 !border-2"
-          aria-label="Next"
+          title="Next"
         />
       ) : null}
       {handles.includes("tool") ? (
@@ -149,7 +149,6 @@ function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
           id="tool"
           className="as-tool-handle !border-info !size-3 !border-2"
           title="Lend this node to an agent as a tool"
-          aria-label="As a tool"
         />
       ) : null}
       {definition?.inputs.includes("tools") ? (
@@ -160,7 +159,6 @@ function FlowNodeView({ data, selected }: NodeProps<CanvasNode>) {
             id="tools"
             className="!border-info !size-3 !border-2"
             title="Connect tools here"
-            aria-label="Tools"
           />
           <span className="text-info pointer-events-none absolute -bottom-5 left-1/2 -translate-x-1/2 text-[10.5px] font-medium">
             Tools

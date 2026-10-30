@@ -73,7 +73,12 @@ export function ApprovalCard({
         <StatusBadge status={approval.status} />
       </div>
       {approval.message ? (
-        <div className="border-border bg-muted/40 mt-3 max-h-72 overflow-y-auto rounded-lg border px-3.5 py-3 text-[13px] leading-relaxed whitespace-pre-wrap">
+        <div
+          className="border-border bg-muted/40 mt-3 max-h-72 overflow-y-auto rounded-lg border px-3.5 py-3 text-[13px] leading-relaxed whitespace-pre-wrap"
+          tabIndex={0}
+          role="region"
+          aria-label={`Message: ${approval.title}`}
+        >
           {approval.message}
         </div>
       ) : null}

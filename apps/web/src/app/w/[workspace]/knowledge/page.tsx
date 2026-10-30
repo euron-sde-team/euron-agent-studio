@@ -116,21 +116,23 @@ export default function KnowledgePage() {
                     </p>
                   </div>
                 </div>
-                <dl className="text-muted-foreground mt-4 flex gap-5 text-[12.5px]">
-                  <div>
-                    <dt className="text-subtle text-[11px] uppercase">Documents</dt>
-                    <dd className="text-foreground text-[15px] font-semibold tabular-nums">
-                      {formatNumber(kb.document_count)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-subtle text-[11px] uppercase">Passages</dt>
-                    <dd className="text-foreground text-[15px] font-semibold tabular-nums">
-                      {formatNumber(kb.chunk_count)}
-                    </dd>
-                  </div>
-                  <div className="ml-auto self-end">updated {formatRelative(kb.updated_at)}</div>
-                </dl>
+                <div className="text-muted-foreground mt-4 flex items-end gap-5 text-[12.5px]">
+                  <dl className="flex gap-5">
+                    <div>
+                      <dt className="text-subtle text-[11px] uppercase">Documents</dt>
+                      <dd className="text-foreground text-[15px] font-semibold tabular-nums">
+                        {formatNumber(kb.document_count)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-subtle text-[11px] uppercase">Passages</dt>
+                      <dd className="text-foreground text-[15px] font-semibold tabular-nums">
+                        {formatNumber(kb.chunk_count)}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="ml-auto">updated {formatRelative(kb.updated_at)}</p>
+                </div>
               </Card>
             </Link>
           ))}
