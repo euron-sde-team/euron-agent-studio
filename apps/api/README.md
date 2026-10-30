@@ -25,10 +25,13 @@ src/agentstudio/
 ├── repositories/      the only code that touches the database
 ├── services/          business rules, transactions, cache invalidation, audit events
 ├── api/               routes and dependencies (authentication, workspace roles, rate limits)
-├── engine/            graph models, validation, planning, expressions, executor, node handlers, tools
+├── engine/            graph models, validation, planning, the expression runtime, executor, node handlers
 ├── providers/         model interface, the offline provider, OpenAI-compatible and Ollama adapters
 ├── export/            the Python exporter
-├── integrations/      SQS or inline queue, S3 or local storage, Redis trace streams, the sandbox API
+├── integrations/      SQS or inline queue, S3 or local storage, Redis trace streams, the guarded
+│                      HTTP client, the sandbox API, AWS clients
+├── ingestion/         splitting knowledge documents into searchable chunks
+├── migrations/        Alembic migrations (applied by `agentstudio migrate` or on boot)
 ├── templates/         the template gallery
 └── demo/              demo seed used by `make demo`
 ```
@@ -68,4 +71,4 @@ API keys are the smallest complete slice of the stack. Read them in this order:
 | Suite | Needs | Run |
 | --- | --- | --- |
 | `tests/unit` | nothing | `uv run pytest tests/unit` |
-| `tests/integration` | Postgres, Redis, the AWS emulator | `make test-integration` from the repo root |
+| `tests/integration` | PostgreSQL, Valkey, the Floci AWS emulator (started for you) | `make test-integration` from the repo root |
